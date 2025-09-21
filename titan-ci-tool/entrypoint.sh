@@ -3,8 +3,43 @@
 set -e
 
 # Function to read YAML config file
+read_yaml_config() {
+  if [ -f "sc# Now make the actual request (don't follow redirects for HTTP endpoints)
+RESPONSE=$(curl -s --max-time "$TIMEOUT_SECONDS" -X POST "$INITIATE_ENDPOINT" \
+  -H "Content-Type: application/json" \
+  --data "{\"url\": \"$REPO_URL\"}")onfig.yml" ]; then
+    echo "Reading configuration from scan_config.yml..."
+    
+    # Simple YAML parser for basic key-value pairs
+    while IFS=':' read -r key value; do
+      # Remove leading/trailing whitespace and quotes
+      key=$(echo "$key" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+      value=$(echo "$value" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | sed 's/^"//' | sed 's/"$//')
+      
+      # Skip comments and empty lines
+      [[ $key =~ ^# ]] && continue
+      [[ -z $key ]] && continue
+      
+      # Set environment variable if not already set (environment variables take precedence)
+      if [ -z "${!key}" ]; then
+        export "$key"="$value"
+        echo "Set $key=$value from config file"
+      fi
+    done < scan_config.yml
+  fi
+}
+
+# DO NOT read config file - GitHub Action inputs take precedence
+# read_yaml_config
+
+# Validate required environment variables
+if [ -z "$API_BASE_URL" ]; then
+  echo "Error: API_BASE_URL environment variable is required."
+  exit 1
+fi
+
 # Validate API_BASE_URL format (should be a valid URL)
-if [[ ! "$API_BASE_URL" =~ ^http?:// ]]; then
+if [[ ! "$API_BASE_URL" =~ ^https?:// ]]; then
   echo "Error: API_BASE_URL must be a valid HTTP/HTTPS URL. Got: $API_BASE_URL"
   exit 1
 fi
@@ -21,7 +56,34 @@ if [ "$BASE_URL_TEST" = "000" ]; then
   echo "  - Firewall blocking the connection"
   exit 1
 fi
-echo "Base URL connectivity test passed (HTTP $BASE_URL_TEST)"y# Initiate scan by posting repository URL
+echo "Base URL connectivity test passed (HTTP $BASE_URL_TEST)"
+
+# Set default values for optional variables
+if [ -z "$REPORT_FORMAT" ]; then
+  REPORT_FORMAT="md"
+fi
+
+if [ -z "$TIMEOUT_SECONDS" ]; then
+  TIMEOUT_SECONDS=300
+fi
+
+if [ -z "$BLOCK_PERCENTAGE" ]; then
+  BLOCK_PERCENTAGE=50
+fi
+
+if [ -z "$BLOCKING" ]; then
+  BLOCKING="true"
+fi
+
+echo "Initiating security scan..."
+echo "API Base URL: $API_BASE_URL"
+
+# Get repository URL
+REPO_URL="https://github.com/${GITHUB_REPOSITORY}"
+
+echo "Repository URL: $REPO_URL"
+
+# Initiate scan by posting repository URL
 INITIATE_ENDPOINT="${API_BASE_URL%/}/initiate"
 
 echo "Posting to initiate endpoint: $INITIATE_ENDPOINT"
@@ -36,7 +98,7 @@ CURL_TEST=$(curl -v --max-time 10 -X POST "$INITIATE_ENDPOINT" \
 echo "Curl verbose output:"
 echo "$CURL_TEST"
 
-# Now make the actual request
+# Now make the actual request with redirect following
 RESPONSE=$(curl -s --max-time "$TIMEOUT_SECONDS" -X POST "$INITIATE_ENDPOINT" \
   -H "Content-Type: application/json" \
   --data "{\"url\": \"$REPO_URL\"}")
@@ -47,6 +109,60 @@ if [ $? -ne 0 ]; then
   echo "This could indicate network issues, invalid URL, or API service unavailable"
   exit 1
 fi
+
+echo "API Response: $RESPONSE"
+
+# Check if response is empty (but allow redirect responses)
+if [ -z "$RESPONSE" ]; then
+  echo "Warning: Empty response from API - this might be a redirect"
+  echo "Trying to follow potential redirect manually..."
+  
+  # Extract redirect location if it's a 3xx response
+  REDIRECT_LOCATION=$(curl -s -I --max-time 10 -X POST "$INITIATE_ENDPOINT" \
+    -H "Content-Type: application/json" \
+    --data "{\"url\": \"$REPO_URL\"}" | grep -i "location:" | cut -d' ' -f2 | tr -d '\r')
+  
+  if [ ! -z "$REDIRECT_LOCATION" ]; then
+    echo "Found redirect to: $REDIRECT_LOCATION"
+    echo "Making request to redirect URL..."
+    RESPONSE=$(curl -s --max-time "$TIMEOUT_SECONDS" -X POST "$REDIRECT_LOCATION" \
+      -H "Content-Type: application/json" \
+      --data "{\"url\": \"$REPO_URL\"}")
+    echo "Redirect API Response: $RESPONSE"
+  fi
+  
+  # If still empty after redirect attempt
+  if [ -z "$RESPONSE" ]; then
+    echo "Error: Still empty response after redirect attempt"
+    exit 1
+  fi
+fi
+
+# Parse groupId from response using multiple methods for robustness
+GROUP_ID=""
+
+# Try method 1: simpler grep approach
+if [ -z "$GROUP_ID" ]; then
+  GROUP_ID=$(echo "$RESPONSE" | sed -n 's/.*"groupId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+fi
+
+# Try method 2: awk approach
+if [ -z "$GROUP_ID" ]; then
+  GROUP_ID=$(echo "$RESPONSE" | awk -F'"groupId"[[:space:]]*:[[:space:]]*"' '{print $2}' | awk -F'"' '{print $1}')
+fi
+
+if [ -z "$GROUP_ID" ]; then
+  echo "Error: Failed to retrieve groupId from response"
+  echo "Full Response: $RESPONSE"
+  exit 1
+fi
+
+echo "Scan initiated successfully. Group ID: $GROUP_ID"
+
+# Output groupId for next step using new syntax
+echo "groupId=$GROUP_ID" >> $GITHUB_OUTPUT
+
+echo "Initiation completed."
   if [ -f "scan_config.yml" ]; then
     echo "Reading configuration from scan_config.yml..."
     
