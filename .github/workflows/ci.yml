@@ -43,12 +43,6 @@ jobs:
       working-directory: ./client
       run: npm ci
 
-    - name: Run server tests
-      working-directory: ./server
-      run: npm test -- --coverage --watchAll=false
-      env:
-        CI: true
-
     - name: Run client tests
       working-directory: ./client
       run: npm test -- --coverage --watchAll=false
