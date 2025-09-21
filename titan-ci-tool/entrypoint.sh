@@ -35,6 +35,12 @@ if [ -z "$API_BASE_URL" ]; then
   exit 1
 fi
 
+# Validate API_BASE_URL format (should be a valid URL)
+if [[ ! "$API_BASE_URL" =~ ^http?:// ]]; then
+  echo "Error: API_BASE_URL must be a valid HTTP/HTTPS URL. Got: $API_BASE_URL"
+  exit 1
+fi
+
 # Set default values for optional variables
 if [ -z "$REPORT_FORMAT" ]; then
   REPORT_FORMAT="md"
@@ -75,26 +81,48 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Check HTTP status (assuming curl -s doesn't show it, but we can check response)
-# For simplicity, assume if response is not empty and contains groupId, it's 200
+echo "API Response: $RESPONSE"
 
-# Parse groupId from response (assume JSON with 'groupId')
-GROUP_ID=$(echo "$RESPONSE" | grep -o '"groupId": *"[^"]*"' | sed 's/"groupId": *"//;s/"$//')
+# Check if response is empty
+if [ -z "$RESPONSE" ]; then
+  echo "Error: Empty response from API"
+  exit 1
+fi
+
+# Check if response contains an error
+if echo "$RESPONSE" | grep -q '"error"' || echo "$RESPONSE" | grep -q '"status"[[:space:]]*:[[:space:]]*"error"'; then
+  echo "Error: API returned an error response"
+  echo "Full Response: $RESPONSE"
+  exit 1
+fi
+
+# Parse groupId from response using multiple methods for robustness
+GROUP_ID=""
+
+# Try method 1: grep with sed (original method)
+if [ -z "$GROUP_ID" ]; then
+  GROUP_ID=$(echo "$RESPONSE" | grep -o '"groupId"[^"]*"[^"]*"' | sed 's/.*"groupId"[^"]*"//' | sed 's/".*//')
+fi
+
+# Try method 2: simpler grep approach
+if [ -z "$GROUP_ID" ]; then
+  GROUP_ID=$(echo "$RESPONSE" | sed -n 's/.*"groupId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+fi
+
+# Try method 3: awk approach
+if [ -z "$GROUP_ID" ]; then
+  GROUP_ID=$(echo "$RESPONSE" | awk -F'"groupId"[[:space:]]*:[[:space:]]*"' '{print $2}' | awk -F'"' '{print $1}')
+fi
 
 if [ -z "$GROUP_ID" ]; then
   echo "Error: Failed to retrieve groupId from response"
-  echo "Response: $RESPONSE"
+  echo "Full Response: $RESPONSE"
   exit 1
 fi
 
 echo "Scan initiated successfully. Group ID: $GROUP_ID"
 
-# Output groupId for next step
-echo "::set-output name=groupId::$GROUP_ID"
-
-echo "Initiation completed."
-
-# Output groupId for next step
-echo "::set-output name=groupId::$GROUP_ID"
+# Output groupId for next step using new syntax
+echo "groupId=$GROUP_ID" >> $GITHUB_OUTPUT
 
 echo "Initiation completed."
