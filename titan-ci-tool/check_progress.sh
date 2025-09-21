@@ -92,7 +92,24 @@ done
 echo "Parsing scan results..."
 
 # Extract jobs array and count vulnerabilities
-JOBS_DATA=$(echo "$FINAL_RESPONSE" | sed -n '/"jobs":\s*\[/,/]/p' | sed '1d;$d' | tr -d '\n' | sed 's/},/}\n/g')
+if command -v jq >/dev/null 2>&1; then
+  echo "Using jq for JSON parsing"
+  JOBS_DATA=$(echo "$FINAL_RESPONSE" | jq -r '.jobs[] | @json')
+else
+  echo "jq not available, using sed fallback"
+  JOBS_DATA=$(echo "$FINAL_RESPONSE" | sed -n '/"jobs":\s*\[/,/]/p' | sed '1d;$d' | tr -d '\n' | sed 's/},/}\n/g')
+fi
+
+echo "JOBS_DATA length: ${#JOBS_DATA}"
+echo "JOBS_DATA preview: $(echo "$JOBS_DATA" | head -c 200)"
+
+ISSUE_COUNT=0
+TOTAL_FILES=0
+RESULTS_DETAILS=""
+RESULTS_DETAILS_XML=""
+
+echo "JOBS_DATA length: ${#JOBS_DATA}"
+echo "JOBS_DATA preview: $(echo "$JOBS_DATA" | head -c 200)"
 
 ISSUE_COUNT=0
 TOTAL_FILES=0
@@ -107,22 +124,35 @@ while IFS= read -r job; do
   
   TOTAL_FILES=$((TOTAL_FILES + 1))
   
-  # Extract detailed information from input
-  FILE_PATH=$(echo "$job" | grep -o '"filePath":\s*"[^"]*"' | sed 's/"filePath":\s*"//' | sed 's/"$//')
-  FUNCTION_NAME=$(echo "$job" | grep -o '"functionName":\s*"[^"]*"' | sed 's/"functionName":\s*"//' | sed 's/"$//')
-  START_LINE=$(echo "$job" | grep -o '"startLine":\s*[0-9]*' | sed 's/"startLine":\s*//' | head -1)
-  END_LINE=$(echo "$job" | grep -o '"endLine":\s*[0-9]*' | sed 's/"endLine":\s*//' | head -1)
-  CODE_SNIPPET=$(echo "$job" | sed -n 's/.*"code":\s*"\([^"]*\)".*/\1/p' | head -1)
-  
-  # Extract vulnerability results
-  IS_VULNERABLE=$(echo "$job" | grep -o '"is_vulnerable":\s*\(true\|false\)' | sed 's/"is_vulnerable":\s*//')
-  SCORE=$(echo "$job" | grep -o '"score":\s*[0-9.]*' | sed 's/"score":\s*//' | head -1)
-  CONFIDENCE=$(echo "$job" | grep -o '"confidence_percent":\s*"[^"]*"' | sed 's/"confidence_percent":\s*"//' | sed 's/"$//')
-  SEVERITY=$(echo "$job" | grep -o '"severity":\s*"[^"]*"' | sed 's/"severity":\s*"//' | sed 's/"$//')
-  
-  # Extract metadata
-  INFERENCE_TIME=$(echo "$job" | grep -o '"inference_time_seconds":\s*[0-9.]*' | sed 's/"inference_time_seconds":\s*//' | head -1)
-  CODE_LENGTH=$(echo "$job" | grep -o '"code_length":\s*[0-9]*' | sed 's/"code_length":\s*//' | head -1)
+  # Extract detailed information from input and result objects
+  if command -v jq >/dev/null 2>&1; then
+    FILE_PATH=$(echo "$job" | jq -r '.input.filePath // empty')
+    FUNCTION_NAME=$(echo "$job" | jq -r '.input.functionName // empty')
+    START_LINE=$(echo "$job" | jq -r '.input.startLine // empty')
+    END_LINE=$(echo "$job" | jq -r '.input.endLine // empty')
+    CODE_SNIPPET=$(echo "$job" | jq -r '.input.code // empty')
+    
+    IS_VULNERABLE=$(echo "$job" | jq -r '.result.is_vulnerable // false')
+    SCORE=$(echo "$job" | jq -r '.result.score // 0')
+    CONFIDENCE=$(echo "$job" | jq -r '.result.confidence_percent // "0%"')
+    SEVERITY=$(echo "$job" | jq -r '.result.severity // "UNKNOWN"')
+    INFERENCE_TIME=$(echo "$job" | jq -r '.result.inference_time_seconds // 0')
+    CODE_LENGTH=$(echo "$job" | jq -r '.result.code_length // 0')
+  else
+    # Fallback sed parsing (less reliable)
+    FILE_PATH=$(echo "$job" | grep -o '"input":\s*{[^}]*"filePath":\s*"[^"]*"' | sed 's/.*"filePath":\s*"//' | sed 's/".*//')
+    FUNCTION_NAME=$(echo "$job" | grep -o '"input":\s*{[^}]*"functionName":\s*"[^"]*"' | sed 's/.*"functionName":\s*"//' | sed 's/".*//')
+    START_LINE=$(echo "$job" | grep -o '"input":\s*{[^}]*"startLine":\s*[0-9]*' | sed 's/.*"startLine":\s*//' | head -1)
+    END_LINE=$(echo "$job" | grep -o '"input":\s*{[^}]*"endLine":\s*[0-9]*' | sed 's/.*"endLine":\s*//' | head -1)
+    CODE_SNIPPET=$(echo "$job" | sed -n 's/.*"input":\s*{[^}]*"code":\s*"\([^"]*\)".*/\1/p' | head -1)
+    
+    IS_VULNERABLE=$(echo "$job" | grep -o '"result":\s*{[^}]*"is_vulnerable":\s*\(true\|false\)' | sed 's/.*"is_vulnerable":\s*//' | head -1)
+    SCORE=$(echo "$job" | grep -o '"result":\s*{[^}]*"score":\s*[0-9.]*' | sed 's/.*"score":\s*//' | head -1)
+    CONFIDENCE=$(echo "$job" | grep -o '"result":\s*{[^}]*"confidence_percent":\s*"[^"]*"' | sed 's/.*"confidence_percent":\s*"//' | sed 's/".*//' | head -1)
+    SEVERITY=$(echo "$job" | grep -o '"result":\s*{[^}]*"severity":\s*"[^"]*"' | sed 's/.*"severity":\s*"//' | sed 's/".*//' | head -1)
+    INFERENCE_TIME=$(echo "$job" | grep -o '"result":\s*{[^}]*"inference_time_seconds":\s*[0-9.]*' | sed 's/.*"inference_time_seconds":\s*//' | head -1)
+    CODE_LENGTH=$(echo "$job" | grep -o '"result":\s*{[^}]*"code_length":\s*[0-9]*' | sed 's/.*"code_length":\s*//' | head -1)
+  fi
   
   if [ "$IS_VULNERABLE" = "true" ]; then
     ISSUE_COUNT=$((ISSUE_COUNT + 1))
