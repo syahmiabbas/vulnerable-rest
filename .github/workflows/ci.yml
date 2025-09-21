@@ -51,7 +51,7 @@ jobs:
       uses: ./titan-ci-tool
       with:
         api_base_url: ${{ secrets.TITAN_API_BASE_URL }}
-        report_format: 'md'
+        report_format: 'pdf'
         timeout_seconds: 300
         exclude_files: 'node_modules/*,dist/*,.git/*,*.log'
         blocking: true
