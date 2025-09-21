@@ -100,7 +100,7 @@ RESULTS_DETAILS=""
 RESULTS_DETAILS_XML=""
 
 # Process each job
-echo "$JOBS_DATA" | while IFS= read -r job; do
+while IFS= read -r job; do
   if [ -z "$job" ]; then
     continue
   fi
@@ -152,7 +152,7 @@ echo "$JOBS_DATA" | while IFS= read -r job; do
     
     RESULTS_DETAILS_XML+="<file><path>$FILE_PATH</path><function>$FUNCTION_NAME</function><lines>$START_LINE-$END_LINE</lines><status>clean</status><score>$SCORE</score><confidence>$CONFIDENCE</confidence><codeLength>$CODE_LENGTH</codeLength><inferenceTime>$INFERENCE_TIME</inferenceTime></file>"
   fi
-done
+done < <(echo "$JOBS_DATA")
 
 # Generate report based on format
 echo "Generating security report in $REPORT_FORMAT format..."
