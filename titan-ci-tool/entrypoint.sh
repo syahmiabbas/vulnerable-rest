@@ -166,7 +166,6 @@ echo "Initiation completed."
       fi
     done < scan_config.yml
   fi
-}
 
 # Read config file to provide defaults (environment variables from action inputs take precedence)
 read_yaml_config()
