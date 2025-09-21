@@ -14,8 +14,8 @@ if [[ ! "$API_BASE_URL" =~ ^https?:// ]]; then
   exit 1
 fi
 
-# Test basic connectivity to the API base URL
-echo "Testing basic connectivity to API base URL..."
+# Test connectivity to the API base URL
+echo "Testing connectivity to API base URL..."
 BASE_URL_TEST=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" "$API_BASE_URL")
 if [ "$BASE_URL_TEST" = "000" ]; then
   echo "Error: Cannot connect to API base URL $API_BASE_URL"
@@ -59,16 +59,7 @@ INITIATE_ENDPOINT="${API_BASE_URL%/}/parser/async"
 echo "Posting to initiate endpoint: $INITIATE_ENDPOINT"
 echo "Request data: {\"url\": \"$REPO_URL\"}"
 
-# Try the request with verbose output first to debug
-echo "Testing API connectivity..."
-CURL_TEST=$(curl -v --max-time 10 -X POST "$INITIATE_ENDPOINT" \
-  -H "Content-Type: application/json" \
-  --data "{\"url\": \"$REPO_URL\"}" 2>&1)
-
-echo "Curl verbose output:"
-echo "$CURL_TEST"
-
-# Now make the actual request (don't follow redirects for HTTP endpoints)
+# Request to initate scan
 RESPONSE=$(curl -s --max-time "$TIMEOUT_SECONDS" -X POST "$INITIATE_ENDPOINT" \
   -H "Content-Type: application/json" \
   --data "{\"url\": \"$REPO_URL\"}")
@@ -86,9 +77,7 @@ echo "API Response: $RESPONSE"
 if [ -z "$RESPONSE" ]; then
   echo "Note: Empty response received"
 
-  # Generate a placeholder groupId for testing
-  GROUP_ID="test-group-$(date +%s)"
-  echo "Using placeholder Group ID: $GROUP_ID"
+  GROUP_ID=""
 else
   # Parse groupId from response using multiple methods for robustness
   GROUP_ID=""

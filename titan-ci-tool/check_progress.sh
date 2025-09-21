@@ -88,10 +88,6 @@ while true; do
   sleep 10
 done
 
-  # Wait before next poll
-  sleep 10
-done
-
 # Parse jobs array to get detailed results
 echo "Parsing scan results..."
 
