@@ -2,33 +2,6 @@
 
 set -e
 
-# Function to read YAML config file
-read_yaml_config() {
-  if [ -f "scan_config.yml" ]; then
-    echo "Reading configuration from scan_config.yml..."
-    
-    # Simple YAML parser for basic key-value pairs
-    while IFS=':' read -r key value; do
-      # Remove leading/trailing whitespace and quotes
-      key=$(echo "$key" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-      value=$(echo "$value" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | sed 's/^"//' | sed 's/"$//')
-      
-      # Skip comments and empty lines
-      [[ $key =~ ^# ]] && continue
-      [[ -z $key ]] && continue
-      
-      # Set environment variable if not already set (environment variables take precedence)
-      if [ -z "${!key}" ]; then
-        export "$key"="$value"
-        echo "Set $key=$value from config file"
-      fi
-    done < scan_config.yml
-  fi
-}
-
-# Read config file to provide defaults (environment variables from action inputs take precedence)
-read_yaml_config()
-
 # Validate required environment variables
 if [ -z "$API_BASE_URL" ]; then
   echo "Error: API_BASE_URL environment variable is required."
