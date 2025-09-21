@@ -105,14 +105,7 @@ echo "JOBS_DATA preview: $(echo "$JOBS_DATA" | head -c 200)"
 
 ISSUE_COUNT=0
 TOTAL_FILES=0
-RESULTS_DETAILS=""
-RESULTS_DETAILS_XML=""
-
-echo "JOBS_DATA length: ${#JOBS_DATA}"
-echo "JOBS_DATA preview: $(echo "$JOBS_DATA" | head -c 200)"
-
-ISSUE_COUNT=0
-TOTAL_FILES=0
+FAILED_FILES=0
 RESULTS_DETAILS=""
 RESULTS_DETAILS_XML=""
 
@@ -122,7 +115,12 @@ while IFS= read -r job; do
     continue
   fi
   
-  TOTAL_FILES=$((TOTAL_FILES + 1))
+  # Extract job status
+  if command -v jq >/dev/null 2>&1; then
+    JOB_STATUS=$(echo "$job" | jq -r '.status // "unknown"')
+  else
+    JOB_STATUS=$(echo "$job" | grep -o '"status":\s*"[^"]*"' | sed 's/"status":\s*"//' | sed 's/".*//' | head -1)
+  fi
   
   # Extract detailed information from input and result objects
   if command -v jq >/dev/null 2>&1; then
@@ -153,6 +151,21 @@ while IFS= read -r job; do
     INFERENCE_TIME=$(echo "$job" | grep -o '"result":\s*{[^}]*"inference_time_seconds":\s*[0-9.]*' | sed 's/.*"inference_time_seconds":\s*//' | head -1)
     CODE_LENGTH=$(echo "$job" | grep -o '"result":\s*{[^}]*"code_length":\s*[0-9]*' | sed 's/.*"code_length":\s*//' | head -1)
   fi
+  
+  # Handle failed jobs separately
+  if [ "$JOB_STATUS" != "completed" ]; then
+    FAILED_FILES=$((FAILED_FILES + 1))
+    RESULTS_DETAILS+="### ❌ Failed to Scan: $FILE_PATH\n"
+    RESULTS_DETAILS+="- **Function:** \`$FUNCTION_NAME\`\n"
+    RESULTS_DETAILS+="- **Lines:** $START_LINE-$END_LINE\n"
+    RESULTS_DETAILS+="- **Status:** Scan failed\n\n"
+    
+    RESULTS_DETAILS_XML+="<failed><file>$FILE_PATH</file><function>$FUNCTION_NAME</function><lines>$START_LINE-$END_LINE</lines><status>failed</status></failed>"
+    continue
+  fi
+  
+  # Only count completed jobs for scoring
+  TOTAL_FILES=$((TOTAL_FILES + 1))
   
   if [ "$IS_VULNERABLE" = "true" ]; then
     ISSUE_COUNT=$((ISSUE_COUNT + 1))
@@ -206,7 +219,9 @@ if [ "$REPORT_FORMAT" == "md" ]; then
 | **Scan Date** | $(date '+%Y-%m-%d %H:%M:%S') |
 | **API Endpoint** | $API_BASE_URL |
 | **Group ID** | $GROUP_ID |
-| **Total Functions Scanned** | $TOTAL_FILES |
+| **Total Functions Processed** | $((TOTAL_FILES + FAILED_FILES)) |
+| **Successfully Scanned Functions** | $TOTAL_FILES |
+| **Failed to Scan Functions** | $FAILED_FILES |
 | **Vulnerable Functions** | $ISSUE_COUNT |
 | **Clean Functions** | $((TOTAL_FILES - ISSUE_COUNT)) |
 | **Vulnerability Rate** | $PERCENT% |
@@ -241,7 +256,9 @@ elif [ "$REPORT_FORMAT" == "pdf" ]; then
 Scan Date: $(date '+%Y-%m-%d %H:%M:%S')
 API Endpoint: $API_BASE_URL
 Group ID: $GROUP_ID
-Total Files Scanned: $TOTAL_FILES
+Total Functions Processed: $((TOTAL_FILES + FAILED_FILES))
+Successfully Scanned Functions: $TOTAL_FILES
+Failed to Scan Functions: $FAILED_FILES
 Issues Found: $ISSUE_COUNT
 Success Rate: $((100 - PERCENT))%
 Issue Rate: $PERCENT%
@@ -259,7 +276,9 @@ elif [ "$REPORT_FORMAT" == "xml" ]; then
     <scanDate>$(date -Iseconds)</scanDate>
     <apiEndpoint>$API_BASE_URL</apiEndpoint>
     <groupId>$GROUP_ID</groupId>
-    <totalFiles>$TOTAL_FILES</totalFiles>
+    <totalFunctionsProcessed>$((TOTAL_FILES + FAILED_FILES))</totalFunctionsProcessed>
+    <successfullyScannedFunctions>$TOTAL_FILES</successfullyScannedFunctions>
+    <failedFunctions>$FAILED_FILES</failedFunctions>
     <issuesFound>$ISSUE_COUNT</issuesFound>
     <successRate>$((100 - PERCENT))</successRate>
     <issueRate>$PERCENT</issueRate>
@@ -282,7 +301,9 @@ elif [ "$REPORT_FORMAT" == "xml" ]; then
     <generatedBy>TITAN Security Scanner</generatedBy>
     <generatedAt>$(date -Iseconds)</generatedAt>
     <scanDetails>
-      <totalFunctions>$TOTAL_FILES</totalFunctions>
+      <totalFunctionsProcessed>$((TOTAL_FILES + FAILED_FILES))</totalFunctionsProcessed>
+      <successfullyScannedFunctions>$TOTAL_FILES</successfullyScannedFunctions>
+      <failedFunctions>$FAILED_FILES</failedFunctions>
       <vulnerableFunctions>$ISSUE_COUNT</vulnerableFunctions>
       <cleanFunctions>$((TOTAL_FILES - ISSUE_COUNT))</cleanFunctions>
       <averageInferenceTime>$(echo "$JOBS_DATA" | grep -o '"inference_time_seconds":\s*[0-9.]*' | sed 's/"inference_time_seconds":\s*//' | awk '{sum+=$1; count++} END {if(count>0) printf "%.2f", sum/count; else print "0.00"}')s</averageInferenceTime>
@@ -306,5 +327,5 @@ if [ "$BLOCKING" == "true" ]; then
   fi
 fi
 
-echo "Security scan completed successfully. Found $ISSUE_COUNT vulnerable functions out of $TOTAL_FILES total functions ($PERCENT%)"
+echo "Security scan completed successfully. Found $ISSUE_COUNT vulnerable functions out of $TOTAL_FILES successfully scanned functions ($PERCENT%), with $FAILED_FILES functions that failed to scan."
 exit 0
