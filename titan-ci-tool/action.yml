@@ -68,4 +68,5 @@ runs:
       uses: actions/upload-artifact@v4
       with:
         name: security-report
-        path: ${{ github.action_path }}/security_report.*
+        path: security_report.*
+      working-directory: ${{ github.action_path }}
