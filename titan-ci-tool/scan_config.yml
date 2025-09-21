@@ -1,0 +1,62 @@
+# TITAN Security Scan Configuration
+# This file contains configuration options for the TITAN CI security scanning tool
+# 
+# IMPORTANT: This is an alternative to configuring via GitHub Action inputs.
+# Do NOT use both scan_config.yml and action 'with:' inputs simultaneously.
+# If both are present, action inputs will take precedence.
+
+# ==========================================
+# REQUIRED SETTINGS
+# ==========================================
+
+# API Configuration
+api_base_url: 'https://your-api-endpoint.com/parser/async'  # Replace with your actual TITAN API URL
+# Note: No API token required - the tool uses tokenless endpoints
+
+# ==========================================
+# SCAN CONFIGURATION
+# ==========================================
+
+# File exclusions (comma-separated glob patterns)
+exclude_files: '*.md,tests/*,node_modules/*,dist/*,.git/*'
+
+# Report format options: md (Markdown), pdf (PDF), xml (XML)
+report_format: 'md'
+
+# API timeout in seconds
+timeout_seconds: 300
+
+# ==========================================
+# BLOCKING BEHAVIOR
+# ==========================================
+
+# Whether to block the pipeline on security issues
+blocking: true
+
+# Percentage of files with issues required to block the pipeline (0-100)
+block_percentage: 50
+
+# ==========================================
+# ADDITIONAL NOTES
+# ==========================================
+#
+# How It Works:
+# 1. Initiates scan by posting repository URL to /initiate endpoint
+# 2. Monitors progress via /progress/{groupId} endpoint until completion
+# 3. Generates report based on final scan summary
+#
+# Report Formats:
+# - md:  Markdown format with emoji icons and tables (default)
+# - pdf: Professional PDF report with table of contents (requires pandoc + xelatex)
+# - xml: Structured XML format for tool integration
+#
+# Risk Levels (automatically calculated):
+# - LOW:     0% issues found
+# - MEDIUM:  1-24% issues found
+# - HIGH:    25-49% issues found
+# - CRITICAL: 50%+ issues found
+#
+# Configuration Methods:
+# Choose ONE method - do not use both simultaneously:
+# 1. GitHub Action inputs (recommended for CI/CD)
+# 2. This configuration file (for repository-based config)

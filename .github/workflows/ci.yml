@@ -1,0 +1,70 @@
+name: CI Pipeline with Security Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install server dependencies
+      working-directory: ./server
+      run: npm ci
+
+    - name: Install client dependencies
+      working-directory: ./client
+      run: npm ci
+
+    - name: Run server tests
+      working-directory: ./server
+      run: npm test -- --coverage --watchAll=false
+      env:
+        CI: true
+
+    - name: Run client tests
+      working-directory: ./client
+      run: npm test -- --coverage --watchAll=false
+      env:
+        CI: true
+
+    - name: Build client
+      working-directory: ./client
+      run: npm run build
+
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run TITAN Security Scan
+      uses: ./titan-ci-tool
+      with:
+        api_base_url: ${{ secrets.TITAN_API_BASE_URL }}
+        report_format: 'md'
+        timeout_seconds: 300
+        exclude_files: 'node_modules/*,dist/*,.git/*,*.log'
+        blocking: true
+        block_percentage: 50
+
+    - name: Upload security report
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-report
+        path: security_report.md
+        retention-days: 30

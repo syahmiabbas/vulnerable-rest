@@ -1,0 +1,72 @@
+name: 'Security Scan with TITAN Inference Model'
+description: 'Runs security scans calling inference model with customizable file exclusions'
+
+inputs:
+  api_base_url:
+    description: 'URL for the backend API'
+    required: true
+  report_format:
+    description: 'The report output format type (md|pdf|xml)'
+    required: false
+    default: 'md'
+  timeout_seconds:
+    description: 'Timeout to call the API before failing (in seconds)'
+    required: false
+    default: '300'
+  exclude_files:
+    description: 'Comma-separated list of file patterns to exclude from scanning (glob)'
+    required: false
+    default: ''
+  blocking:
+    description: 'Whether this step is blocking (fail on issues) or non-blocking'
+    required: false
+    default: 'true'
+  block_percentage:
+    description: 'Percentage of files with issues required to block (default: 50)'
+    required: false
+    default: '50'
+
+outputs:
+  groupId:
+    description: 'The group ID for the initiated scan job'
+    value: ${{ steps.initiate.outputs.groupId }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Initiate security scan
+      id: initiate
+      shell: bash
+      run: |
+        chmod +x ./entrypoint.sh
+        ./entrypoint.sh
+      env:
+        API_BASE_URL: ${{ inputs.api_base_url }}
+        REPORT_FORMAT: ${{ inputs.report_format }}
+        TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+        EXCLUDE_FILES: ${{ inputs.exclude_files }}
+        BLOCKING: ${{ inputs.blocking }}
+        BLOCK_PERCENTAGE: ${{ inputs.block_percentage }}
+      
+    - name: Check scan progress
+      shell: bash
+      run: |
+        chmod +x ./check_progress.sh
+        ./check_progress.sh
+      env:
+        API_BASE_URL: ${{ inputs.api_base_url }}
+        GROUP_ID: ${{ steps.initiate.outputs.groupId }}
+        REPORT_FORMAT: ${{ inputs.report_format }}
+        TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+        EXCLUDE_FILES: ${{ inputs.exclude_files }}
+        BLOCKING: ${{ inputs.blocking }}
+        BLOCK_PERCENTAGE: ${{ inputs.block_percentage }}
+      
+    - name: Upload security report artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-report
+        path: security_report.*
