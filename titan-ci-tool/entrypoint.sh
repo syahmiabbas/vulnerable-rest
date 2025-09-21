@@ -54,7 +54,7 @@ REPO_URL="https://github.com/${GITHUB_REPOSITORY}"
 echo "Repository URL: $REPO_URL"
 
 # Initiate scan by posting repository URL
-INITIATE_ENDPOINT="${API_BASE_URL%/}/initiate"
+INITIATE_ENDPOINT="${API_BASE_URL%/}/parser/async"
 
 echo "Posting to initiate endpoint: $INITIATE_ENDPOINT"
 echo "Request data: {\"url\": \"$REPO_URL\"}"
