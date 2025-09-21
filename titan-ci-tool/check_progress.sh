@@ -107,25 +107,50 @@ echo "$JOBS_DATA" | while IFS= read -r job; do
   
   TOTAL_FILES=$((TOTAL_FILES + 1))
   
-  # Extract file path
+  # Extract detailed information from input
   FILE_PATH=$(echo "$job" | grep -o '"filePath":\s*"[^"]*"' | sed 's/"filePath":\s*"//' | sed 's/"$//')
+  FUNCTION_NAME=$(echo "$job" | grep -o '"functionName":\s*"[^"]*"' | sed 's/"functionName":\s*"//' | sed 's/"$//')
+  START_LINE=$(echo "$job" | grep -o '"startLine":\s*[0-9]*' | sed 's/"startLine":\s*//' | head -1)
+  END_LINE=$(echo "$job" | grep -o '"endLine":\s*[0-9]*' | sed 's/"endLine":\s*//' | head -1)
+  CODE_SNIPPET=$(echo "$job" | sed -n 's/.*"code":\s*"\([^"]*\)".*/\1/p' | head -1)
   
-  # Extract vulnerability status
+  # Extract vulnerability results
   IS_VULNERABLE=$(echo "$job" | grep -o '"is_vulnerable":\s*\(true\|false\)' | sed 's/"is_vulnerable":\s*//')
-  
-  # Extract score
-  SCORE=$(echo "$job" | grep -o '"score":\s*[0-9.]*' | sed 's/"score":\s*//')
-  
-  # Extract severity
+  SCORE=$(echo "$job" | grep -o '"score":\s*[0-9.]*' | sed 's/"score":\s*//' | head -1)
+  CONFIDENCE=$(echo "$job" | grep -o '"confidence_percent":\s*"[^"]*"' | sed 's/"confidence_percent":\s*"//' | sed 's/"$//')
   SEVERITY=$(echo "$job" | grep -o '"severity":\s*"[^"]*"' | sed 's/"severity":\s*"//' | sed 's/"$//')
+  
+  # Extract metadata
+  INFERENCE_TIME=$(echo "$job" | grep -o '"inference_time_seconds":\s*[0-9.]*' | sed 's/"inference_time_seconds":\s*//' | head -1)
+  CODE_LENGTH=$(echo "$job" | grep -o '"code_length":\s*[0-9]*' | sed 's/"code_length":\s*//' | head -1)
   
   if [ "$IS_VULNERABLE" = "true" ]; then
     ISSUE_COUNT=$((ISSUE_COUNT + 1))
-    RESULTS_DETAILS+="### $FILE_PATH\n- **Issue:** Security vulnerability detected (Score: $SCORE, Severity: $SEVERITY)\n\n"
-    RESULTS_DETAILS_XML+="<file><path>$FILE_PATH</path><status>issue_found</status><details>Security vulnerability detected (Score: $SCORE, Severity: $SEVERITY)</details></file>"
+    
+    # Truncate code snippet if too long (max 200 chars)
+    TRUNCATED_CODE=$(echo "$CODE_SNIPPET" | cut -c1-200)
+    if [ ${#CODE_SNIPPET} -gt 200 ]; then
+      TRUNCATED_CODE="${TRUNCATED_CODE}..."
+    fi
+    
+    RESULTS_DETAILS+="### 🚨 Vulnerability Found: $FILE_PATH\n"
+    RESULTS_DETAILS+="- **Function:** \`$FUNCTION_NAME\`\n"
+    RESULTS_DETAILS+="- **Lines:** $START_LINE-$END_LINE\n"
+    RESULTS_DETAILS+="- **Severity:** $SEVERITY\n"
+    RESULTS_DETAILS+="- **Score:** $SCORE ($CONFIDENCE confidence)\n"
+    RESULTS_DETAILS+="- **Code Length:** $CODE_LENGTH characters\n"
+    RESULTS_DETAILS+="- **Inference Time:** ${INFERENCE_TIME}s\n"
+    RESULTS_DETAILS+="- **Code Snippet:**\n\`\`\`\n$TRUNCATED_CODE\n\`\`\`\n\n"
+    
+    RESULTS_DETAILS_XML+="<vulnerability><file>$FILE_PATH</file><function>$FUNCTION_NAME</function><lines>$START_LINE-$END_LINE</lines><severity>$SEVERITY</severity><score>$SCORE</score><confidence>$CONFIDENCE</confidence><codeLength>$CODE_LENGTH</codeLength><inferenceTime>$INFERENCE_TIME</inferenceTime><codeSnippet><![CDATA[$CODE_SNIPPET]]></codeSnippet></vulnerability>"
   else
-    RESULTS_DETAILS+="### $FILE_PATH\n- No issues found (Score: $SCORE)\n\n"
-    RESULTS_DETAILS_XML+="<file><path>$FILE_PATH</path><status>clean</status><details>No security issues detected (Score: $SCORE)</details></file>"
+    RESULTS_DETAILS+="### ✅ Clean: $FILE_PATH\n"
+    RESULTS_DETAILS+="- **Function:** \`$FUNCTION_NAME\`\n"
+    RESULTS_DETAILS+="- **Lines:** $START_LINE-$END_LINE\n"
+    RESULTS_DETAILS+="- **Score:** $SCORE ($CONFIDENCE confidence)\n"
+    RESULTS_DETAILS+="- **Status:** No security issues detected\n\n"
+    
+    RESULTS_DETAILS_XML+="<file><path>$FILE_PATH</path><function>$FUNCTION_NAME</function><lines>$START_LINE-$END_LINE</lines><status>clean</status><score>$SCORE</score><confidence>$CONFIDENCE</confidence><codeLength>$CODE_LENGTH</codeLength><inferenceTime>$INFERENCE_TIME</inferenceTime></file>"
   fi
 done
 
@@ -151,10 +176,11 @@ if [ "$REPORT_FORMAT" == "md" ]; then
 | **Scan Date** | $(date '+%Y-%m-%d %H:%M:%S') |
 | **API Endpoint** | $API_BASE_URL |
 | **Group ID** | $GROUP_ID |
-| **Total Files Scanned** | $TOTAL_FILES |
-| **Issues Found** | $ISSUE_COUNT |
-| **Success Rate** | $((100 - PERCENT))% |
-| **Issue Rate** | $PERCENT% |
+| **Total Functions Scanned** | $TOTAL_FILES |
+| **Vulnerable Functions** | $ISSUE_COUNT |
+| **Clean Functions** | $((TOTAL_FILES - ISSUE_COUNT)) |
+| **Vulnerability Rate** | $PERCENT% |
+| **Average Inference Time** | $(echo "$JOBS_DATA" | grep -o '"inference_time_seconds":\s*[0-9.]*' | sed 's/"inference_time_seconds":\s*//' | awk '{sum+=$1; count++} END {if(count>0) printf "%.2f", sum/count; else print "0.00"}')s |
 
 ---
 
@@ -225,6 +251,12 @@ elif [ "$REPORT_FORMAT" == "xml" ]; then
     <recommendation>$(if [ $ISSUE_COUNT -eq 0 ]; then echo "No immediate action required"; else echo "Review and address identified security issues"; fi)</recommendation>
     <generatedBy>TITAN Security Scanner</generatedBy>
     <generatedAt>$(date -Iseconds)</generatedAt>
+    <scanDetails>
+      <totalFunctions>$TOTAL_FILES</totalFunctions>
+      <vulnerableFunctions>$ISSUE_COUNT</vulnerableFunctions>
+      <cleanFunctions>$((TOTAL_FILES - ISSUE_COUNT))</cleanFunctions>
+      <averageInferenceTime>$(echo "$JOBS_DATA" | grep -o '"inference_time_seconds":\s*[0-9.]*' | sed 's/"inference_time_seconds":\s*//' | awk '{sum+=$1; count++} END {if(count>0) printf "%.2f", sum/count; else print "0.00"}')s</averageInferenceTime>
+    </scanDetails>
   </summary>
 </TitanSecurityReport>
 EOF
@@ -244,5 +276,5 @@ if [ "$BLOCKING" == "true" ]; then
   fi
 fi
 
-echo "Security scan completed successfully. Issues found: $ISSUE_COUNT / $TOTAL_FILES ($PERCENT%)"
+echo "Security scan completed successfully. Found $ISSUE_COUNT vulnerable functions out of $TOTAL_FILES total functions ($PERCENT%)"
 exit 0

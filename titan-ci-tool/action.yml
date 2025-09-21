@@ -64,8 +64,3 @@ runs:
         BLOCKING: ${{ inputs.blocking }}
         BLOCK_PERCENTAGE: ${{ inputs.block_percentage }}
       
-    - name: Upload security report artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: security-report
-        path: titan-ci-tool/security_report.*
