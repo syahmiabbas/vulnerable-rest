@@ -3,56 +3,183 @@
 const fs = require('fs');
 const path = require('path');
 
-// Simple HTML template for PDF generation with TailwindCSS
+// Enhanced HTML template for PDF generation with TailwindCSS
 function markdownToHtml(markdownContent) {
-  // Basic markdown to HTML conversion with TailwindCSS classes
-  let html = markdownContent
-    // Headers with TailwindCSS styling
-    .replace(/^# (.*$)/gm, '<h1 class="text-4xl font-bold text-white p-6 mb-8 rounded-lg gradient-header shadow-lg">🛡️ $1</h1>')
-    .replace(/^## (.*$)/gm, '<h2 class="text-3xl font-semibold text-titan-blue mt-12 mb-6 pb-3 border-b-2 border-titan-blue">$1</h2>')
-    .replace(/^### 🚨(.*$)/gm, '<div class="vulnerability-card rounded-lg p-6 mb-6 shadow-md"><h3 class="text-xl font-semibold text-danger mb-4 flex items-center"><span class="text-2xl mr-2">🚨</span>$1</h3>')
-    .replace(/^### ✅(.*$)/gm, '<div class="success-card rounded-lg p-6 mb-6 shadow-md"><h3 class="text-xl font-semibold text-success mb-4 flex items-center"><span class="text-2xl mr-2">✅</span>$1</h3>')
-    .replace(/^### ❌(.*$)/gm, '<div class="warning-card rounded-lg p-6 mb-6 shadow-md"><h3 class="text-xl font-semibold text-warning mb-4 flex items-center"><span class="text-2xl mr-2">❌</span>$1</h3>')
-    .replace(/^### (.*$)/gm, '<h3 class="text-xl font-semibold text-gray-700 mt-8 mb-4">$1</h3>')
-    .replace(/^#### (.*$)/gm, '<h4 class="text-lg font-medium text-gray-600 mt-6 mb-3">$1</h4>')
-    // Bold and italic with TailwindCSS
-    .replace(/\*\*(.*?)\*\*/g, '<span class="font-semibold text-titan-dark">$1</span>')
-    .replace(/\*(.*?)\*/g, '<span class="italic text-gray-600">$1</span>')
-    // Code styling
-    .replace(/```([^`]*)```/g, '<div class="code-block rounded-lg p-4 my-4 overflow-x-auto shadow-inner"><pre class="text-green-300 text-sm font-mono whitespace-pre-wrap">$1</pre></div>')
-    .replace(/`([^`]*)`/g, '<code class="bg-gray-100 text-danger px-2 py-1 rounded text-sm font-mono">$1</code>')
-    // Tables with TailwindCSS
-    .replace(/\|([^\n]+)\|/g, (match, content) => {
-      const cells = content.split('|').map(cell => cell.trim()).filter(cell => cell);
-      const isHeader = match.includes('**');
-      if (isHeader) {
-        return '<tr class="bg-titan-blue text-white">' + cells.map(cell => `<td class="px-4 py-3 font-semibold">${cell.replace(/\*\*/g, '')}</td>`).join('') + '</tr>';
+  // Split content into lines for better processing
+  const lines = markdownContent.split('\n');
+  let html = '';
+  let inCodeBlock = false;
+  let inCard = false;
+  let cardType = '';
+  let inTable = false;
+  let tableRows = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    
+    // Handle code blocks
+    if (line.trim() === '```') {
+      if (inCodeBlock) {
+        html += '</pre></div>';
+        inCodeBlock = false;
       } else {
-        return '<tr class="hover:bg-blue-50 transition-colors duration-200">' + cells.map(cell => `<td class="px-4 py-3 text-gray-700 border-b border-gray-200">${cell}</td>`).join('') + '</tr>';
+        html += '<div class="code-block rounded-lg p-4 my-4 overflow-x-auto shadow-inner"><pre class="text-green-300 text-sm font-mono whitespace-pre-wrap">';
+        inCodeBlock = true;
       }
-    })
-    // Horizontal rules
-    .replace(/^---$/gm, '<div class="my-8"><hr class="border-0 h-px bg-gradient-to-r from-titan-blue to-gray-300"></div>')
-    // List items with TailwindCSS
-    .replace(/^- \*\*(.*?)\*\*: (.*$)/gm, '<div class="flex items-start mb-3"><span class="font-semibold text-titan-dark min-w-0 mr-2">$1:</span><span class="text-gray-700 flex-1">$2</span></div>')
-    // Line breaks
-    .replace(/\n\n/g, '</div><div class="mb-4">')
-    .replace(/\n/g, '<br>');
-
-  // Wrap table rows in table tags with TailwindCSS styling
-  html = html.replace(/(<tr>.*?<\/tr>)/g, (match) => {
-    if (!match.includes('<table>')) {
-      return `<div class="overflow-x-auto my-6"><table class="w-full bg-white rounded-lg shadow-lg overflow-hidden">${match}</table></div>`;
+      continue;
     }
-    return match;
-  });
+    
+    if (inCodeBlock) {
+      // Escape HTML characters in code
+      html += line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '\n';
+      continue;
+    }
+    
+    // Handle headers
+    if (line.startsWith('# ')) {
+      html += `<h1 class="text-4xl font-bold text-white p-6 mb-8 rounded-lg gradient-header shadow-lg">🛡️ ${line.substring(2)}</h1>`;
+    } else if (line.startsWith('## ')) {
+      html += `<h2 class="text-3xl font-semibold text-titan-blue mt-12 mb-6 pb-3 border-b-2 border-titan-blue">${line.substring(3)}</h2>`;
+    } else if (line.startsWith('### 🚨')) {
+      // Close previous card if any
+      if (inCard) {
+        html += '</div></div>';
+      }
+      html += `<div class="vulnerability-card rounded-lg p-6 mb-6 shadow-md">
+                 <h3 class="text-xl font-semibold text-danger mb-4 flex items-center">
+                   <span class="text-2xl mr-2">🚨</span>${line.substring(6)}
+                 </h3>
+                 <div class="space-y-3">`;
+      inCard = true;
+      cardType = 'vulnerability';
+    } else if (line.startsWith('### ✅')) {
+      // Close previous card if any
+      if (inCard) {
+        html += '</div></div>';
+      }
+      html += `<div class="success-card rounded-lg p-6 mb-6 shadow-md">
+                 <h3 class="text-xl font-semibold text-success mb-4 flex items-center">
+                   <span class="text-2xl mr-2">✅</span>${line.substring(6)}
+                 </h3>
+                 <div class="space-y-3">`;
+      inCard = true;
+      cardType = 'success';
+    } else if (line.startsWith('### ❌')) {
+      // Close previous card if any
+      if (inCard) {
+        html += '</div></div>';
+      }
+      html += `<div class="warning-card rounded-lg p-6 mb-6 shadow-md">
+                 <h3 class="text-xl font-semibold text-warning mb-4 flex items-center">
+                   <span class="text-2xl mr-2">❌</span>${line.substring(6)}
+                 </h3>
+                 <div class="space-y-3">`;
+      inCard = true;
+      cardType = 'warning';
+    } else if (line.startsWith('### ')) {
+      // Close card for regular h3
+      if (inCard) {
+        html += '</div></div>';
+        inCard = false;
+      }
+      html += `<h3 class="text-xl font-semibold text-gray-700 mt-8 mb-4">${line.substring(4)}</h3>`;
+    } else if (line.startsWith('#### ')) {
+      html += `<h4 class="text-lg font-medium text-gray-600 mt-6 mb-3">${line.substring(5)}</h4>`;
+    }
+    // Handle table rows
+    else if (line.includes('|') && line.trim().startsWith('|') && line.trim().endsWith('|')) {
+      if (!inTable) {
+        inTable = true;
+        tableRows = [];
+      }
+      
+      const cells = line.split('|').map(cell => cell.trim()).filter(cell => cell);
+      const isHeader = line.includes('**');
+      
+      if (isHeader) {
+        const headerCells = cells.map(cell => `<td class="px-4 py-3 font-semibold">${cell.replace(/\*\*/g, '')}</td>`).join('');
+        tableRows.push(`<tr class="bg-titan-blue text-white">${headerCells}</tr>`);
+      } else if (!cells.every(cell => cell.match(/^[-\s]*$/))) { // Skip separator rows
+        const bodyCells = cells.map(cell => `<td class="px-4 py-3 text-gray-700 border-b border-gray-200">${cell}</td>`).join('');
+        tableRows.push(`<tr class="hover:bg-blue-50 transition-colors duration-200">${bodyCells}</tr>`);
+      }
+    }
+    // Handle list items
+    else if (line.match(/^- \*\*(.*?)\*\*: (.*)$/)) {
+      const match = line.match(/^- \*\*(.*?)\*\*: (.*)$/);
+      const property = match[1];
+      let value = match[2];
+      
+      // Handle code in values
+      value = value.replace(/`([^`]*)`/g, '<code class="bg-gray-100 text-danger px-2 py-1 rounded text-sm font-mono">$1</code>');
+      
+      html += `<div class="flex items-start mb-3">
+                 <span class="font-semibold text-titan-dark min-w-0 mr-2">${property}:</span>
+                 <span class="text-gray-700 flex-1">${value}</span>
+               </div>`;
+    }
+    // Handle horizontal rules
+    else if (line.trim() === '---') {
+      // Close table if we were in one
+      if (inTable) {
+        html += `<div class="overflow-x-auto my-6">
+                   <table class="w-full bg-white rounded-lg shadow-lg overflow-hidden">
+                     ${tableRows.join('')}
+                   </table>
+                 </div>`;
+        inTable = false;
+        tableRows = [];
+      }
+      html += '<div class="my-8"><hr class="border-0 h-px bg-gradient-to-r from-titan-blue to-gray-300"></div>';
+    }
+    // Handle empty lines
+    else if (line.trim() === '') {
+      // Close table if we were in one
+      if (inTable) {
+        html += `<div class="overflow-x-auto my-6">
+                   <table class="w-full bg-white rounded-lg shadow-lg overflow-hidden">
+                     ${tableRows.join('')}
+                   </table>
+                 </div>`;
+        inTable = false;
+        tableRows = [];
+      }
+      
+      // Close card if we were in one and this is end of card content
+      if (inCard && i < lines.length - 1 && lines[i + 1].trim() !== '' && !lines[i + 1].startsWith('- ')) {
+        html += '</div></div>';
+        inCard = false;
+      }
+    }
+    // Handle regular text
+    else if (line.trim() !== '') {
+      // Apply text formatting
+      let formattedLine = line
+        .replace(/\*\*(.*?)\*\*/g, '<span class="font-semibold text-titan-dark">$1</span>')
+        .replace(/\*(.*?)\*/g, '<span class="italic text-gray-600">$1</span>')
+        .replace(/`([^`]*)`/g, '<code class="bg-gray-100 text-danger px-2 py-1 rounded text-sm font-mono">$1</code>');
+      
+      if (!inCard && !inTable) {
+        html += `<p class="mb-4 text-gray-700">${formattedLine}</p>`;
+      }
+    }
+  }
 
-  // Close any open vulnerability/success/warning cards
-  html = html.replace(/(<div class="(?:vulnerability-card|success-card|warning-card)[^>]*>.*?)(<h[1-6]|<div class="(?:vulnerability-card|success-card|warning-card)|$)/g, '$1</div>$2');
+  // Close any remaining open elements
+  if (inCodeBlock) {
+    html += '</pre></div>';
+  }
+  if (inCard) {
+    html += '</div></div>';
+  }
+  if (inTable) {
+    html += `<div class="overflow-x-auto my-6">
+               <table class="w-full bg-white rounded-lg shadow-lg overflow-hidden">
+                 ${tableRows.join('')}
+               </table>
+             </div>`;
+  }
 
-  // Wrap content in main container
-  html = '<div class="mb-4">' + html + '</div>';
-  
   return html;
 }
 

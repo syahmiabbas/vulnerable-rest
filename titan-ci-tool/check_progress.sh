@@ -304,8 +304,8 @@ EOF
       # Try wkhtmltopdf (lightweight alternative)
       if command -v wkhtmltopdf >/dev/null 2>&1; then
         echo "Using wkhtmltopdf for PDF conversion..."
-        # First create a simple HTML version for wkhtmltopdf with TailwindCSS
-        cat > security_report.html << HTMLEOF
+        # First create a proper HTML version for wkhtmltopdf with TailwindCSS
+        cat > security_report.html << 'HTMLEOF'
 <!DOCTYPE html>
 <html>
 <head>
@@ -319,6 +319,9 @@ EOF
                     colors: {
                         'titan-blue': '#2c5aa0',
                         'titan-dark': '#1e3a8a',
+                        'danger': '#ef4444',
+                        'success': '#10b981',
+                        'warning': '#f59e0b',
                     }
                 }
             }
@@ -341,19 +344,198 @@ EOF
             background: linear-gradient(135deg, #fffbeb 0%, #fed7aa 100%);
             border-left: 6px solid #f59e0b;
         }
+        .code-block {
+            background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+        }
+        @media print {
+            .print\:shadow-none { box-shadow: none !important; }
+            .print\:bg-white { background-color: white !important; }
+        }
     </style>
 </head>
-<body class="bg-gray-50 font-sans">
-    <div class="max-w-5xl mx-auto p-8 bg-white shadow-lg rounded-lg">
-$(echo "$RESULTS_DETAILS" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' | \
-  sed 's/^# \(.*\)$/<h1 class="text-4xl font-bold text-white p-6 mb-8 rounded-lg gradient-header">\1<\/h1>/' | \
-  sed 's/^## \(.*\)$/<h2 class="text-3xl font-semibold text-titan-blue mt-12 mb-6 pb-3 border-b-2 border-titan-blue">\1<\/h2>/' | \
-  sed 's/^### 🚨\(.*\)$/<div class="vulnerability-card rounded-lg p-6 mb-6"><h3 class="text-xl font-semibold text-red-600 mb-4">🚨\1<\/h3>/' | \
-  sed 's/^### ✅\(.*\)$/<div class="success-card rounded-lg p-6 mb-6"><h3 class="text-xl font-semibold text-green-600 mb-4">✅\1<\/h3>/' | \
-  sed 's/^### ❌\(.*\)$/<div class="warning-card rounded-lg p-6 mb-6"><h3 class="text-xl font-semibold text-yellow-600 mb-4">❌\1<\/h3>/' | \
-  sed 's/\*\*\([^*]*\)\*\*/<span class="font-semibold text-titan-dark">\1<\/span>/g' | \
-  sed 's/`\([^`]*\)`/<code class="bg-gray-100 text-red-600 px-2 py-1 rounded text-sm">\1<\/code>/g' | \
-  sed 's/^$/\<\/div\><br\>/')
+<body class="bg-gray-50 font-sans leading-relaxed">
+    <div class="max-w-5xl mx-auto p-8 bg-white shadow-lg rounded-lg print:shadow-none print:bg-white">
+HTMLEOF
+
+        # Add the main content using proper HTML structure
+        cat >> security_report.html << HTMLEOF
+        <h1 class="text-4xl font-bold text-white p-6 mb-8 rounded-lg gradient-header shadow-lg">🛡️ TITAN Security Scan Report</h1>
+        
+        <div class="my-8"><hr class="border-0 h-px bg-gradient-to-r from-titan-blue to-gray-300"></div>
+        
+        <h2 class="text-3xl font-semibold text-titan-blue mt-12 mb-6 pb-3 border-b-2 border-titan-blue">📊 Scan Summary</h2>
+        
+        <div class="overflow-x-auto my-6">
+            <table class="w-full bg-white rounded-lg shadow-lg overflow-hidden">
+                <tr class="bg-titan-blue text-white">
+                    <td class="px-4 py-3 font-semibold">Metric</td>
+                    <td class="px-4 py-3 font-semibold">Value</td>
+                </tr>
+                <tr class="hover:bg-blue-50 transition-colors duration-200">
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Scan Date</span></td>
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$(date '+%Y-%m-%d %H:%M:%S')</td>
+                </tr>
+                <tr class="hover:bg-blue-50 transition-colors duration-200">
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">API Endpoint</span></td>
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$API_BASE_URL</td>
+                </tr>
+                <tr class="hover:bg-blue-50 transition-colors duration-200">
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Group ID</span></td>
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$GROUP_ID</td>
+                </tr>
+                <tr class="hover:bg-blue-50 transition-colors duration-200">
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Total Functions Processed</span></td>
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$((TOTAL_FILES + FAILED_FILES))</td>
+                </tr>
+                <tr class="hover:bg-blue-50 transition-colors duration-200">
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Successfully Scanned Functions</span></td>
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$TOTAL_FILES</td>
+                </tr>
+                <tr class="hover:bg-blue-50 transition-colors duration-200">
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Failed to Scan Functions</span></td>
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$FAILED_FILES</td>
+                </tr>
+                <tr class="hover:bg-blue-50 transition-colors duration-200">
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Vulnerable Functions</span></td>
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$ISSUE_COUNT</td>
+                </tr>
+                <tr class="hover:bg-blue-50 transition-colors duration-200">
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Clean Functions</span></td>
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$((TOTAL_FILES - ISSUE_COUNT))</td>
+                </tr>
+                <tr class="hover:bg-blue-50 transition-colors duration-200">
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Vulnerability Rate</span></td>
+                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$PERCENT%</td>
+                </tr>
+            </table>
+        </div>
+        
+        <div class="my-8"><hr class="border-0 h-px bg-gradient-to-r from-titan-blue to-gray-300"></div>
+        
+        <h2 class="text-3xl font-semibold text-titan-blue mt-12 mb-6 pb-3 border-b-2 border-titan-blue">📁 Detailed Results</h2>
+HTMLEOF
+
+        # Now add the detailed results with proper parsing
+        while IFS= read -r line; do
+          if [[ "$line" =~ ^###\ 🚨 ]]; then
+            # Start vulnerability card
+            title="${line#*🚨 }"
+            cat >> security_report.html << 'CARDEOF'
+        <div class="vulnerability-card rounded-lg p-6 mb-6 shadow-md">
+            <h3 class="text-xl font-semibold text-danger mb-4 flex items-center">
+                <span class="text-2xl mr-2">🚨</span> 
+CARDEOF
+            echo "$title" >> security_report.html
+            cat >> security_report.html << 'CARDEOF'
+            </h3>
+            <div class="space-y-3">
+CARDEOF
+          elif [[ "$line" =~ ^###\ ✅ ]]; then
+            # Start success card
+            title="${line#*✅ }"
+            cat >> security_report.html << 'CARDEOF'
+        <div class="success-card rounded-lg p-6 mb-6 shadow-md">
+            <h3 class="text-xl font-semibold text-success mb-4 flex items-center">
+                <span class="text-2xl mr-2">✅</span> 
+CARDEOF
+            echo "$title" >> security_report.html
+            cat >> security_report.html << 'CARDEOF'
+            </h3>
+            <div class="space-y-3">
+CARDEOF
+          elif [[ "$line" =~ ^###\ ❌ ]]; then
+            # Start warning card
+            title="${line#*❌ }"
+            cat >> security_report.html << 'CARDEOF'
+        <div class="warning-card rounded-lg p-6 mb-6 shadow-md">
+            <h3 class="text-xl font-semibold text-warning mb-4 flex items-center">
+                <span class="text-2xl mr-2">❌</span> 
+CARDEOF
+            echo "$title" >> security_report.html
+            cat >> security_report.html << 'CARDEOF'
+            </h3>
+            <div class="space-y-3">
+CARDEOF
+          elif [[ "$line" =~ ^-\ \*\*.*\*\*:.*$ ]]; then
+            # Property line - extract property and value properly
+            property=$(echo "$line" | sed 's/^- \*\*\([^*]*\)\*\*: .*/\1/')
+            value=$(echo "$line" | sed 's/^- \*\*[^*]*\*\*: \(.*\)/\1/')
+            
+            # Handle code snippets in values
+            if [[ "$value" =~ \`.*\` ]]; then
+              value=$(echo "$value" | sed 's/`\([^`]*\)`/<code class="bg-gray-100 text-danger px-2 py-1 rounded text-sm font-mono">\1<\/code>/g')
+            fi
+            
+            # Escape HTML characters
+            value=$(echo "$value" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+            property=$(echo "$property" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+            
+            cat >> security_report.html << PROPEOF
+                <div class="flex items-start mb-3">
+                    <span class="font-semibold text-titan-dark min-w-0 mr-2">$property:</span>
+                    <span class="text-gray-700 flex-1">$value</span>
+                </div>
+PROPEOF
+          elif [[ "$line" =~ ^\`\`\`$ ]]; then
+            # Start or end code block
+            if [[ "$in_code_block" == "true" ]]; then
+              cat >> security_report.html << 'CODEEOF'
+                    </pre>
+                </div>
+CODEEOF
+              in_code_block="false"
+            else
+              cat >> security_report.html << 'CODEEOF'
+                <div class="code-block rounded-lg p-4 my-4 overflow-x-auto shadow-inner">
+                    <pre class="text-green-300 text-sm font-mono whitespace-pre-wrap">
+CODEEOF
+              in_code_block="true"
+            fi
+          elif [[ "$in_code_block" == "true" ]]; then
+            # Code content - escape HTML and preserve formatting
+            escaped_line=$(echo "$line" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+            echo "$escaped_line" >> security_report.html
+          elif [[ "$line" == "" ]]; then
+            # Empty line - close current card if we're in one
+            if [[ "$prev_line" =~ ^- ]] || [[ "$prev_line" =~ ^\`\`\`$ ]]; then
+              cat >> security_report.html << 'CLOSEEOF'
+            </div>
+        </div>
+
+CLOSEEOF
+            fi
+          fi
+          prev_line="$line"
+        done <<< "$RESULTS_DETAILS"
+        
+        # Close any remaining open card
+        cat >> security_report.html << 'FINALEOF'
+            </div>
+        </div>
+FINALEOF
+
+        # Add configuration section
+        cat >> security_report.html << HTMLEOF
+        
+        <div class="my-8"><hr class="border-0 h-px bg-gradient-to-r from-titan-blue to-gray-300"></div>
+        
+        <h2 class="text-3xl font-semibold text-titan-blue mt-12 mb-6 pb-3 border-b-2 border-titan-blue">🔍 Scan Configuration</h2>
+        
+        <div class="bg-gray-50 rounded-lg p-6">
+            <ul class="space-y-2">
+                <li class="flex"><span class="font-semibold text-titan-dark mr-2">Excluded Files:</span><span class="text-gray-700">${EXCLUDE_FILES:-"None"}</span></li>
+                <li class="flex"><span class="font-semibold text-titan-dark mr-2">Blocking Mode:</span><span class="text-gray-700">$BLOCKING</span></li>
+                <li class="flex"><span class="font-semibold text-titan-dark mr-2">Block Percentage Threshold:</span><span class="text-gray-700">$BLOCK_PERCENTAGE%</span></li>
+                <li class="flex"><span class="font-semibold text-titan-dark mr-2">Timeout:</span><span class="text-gray-700">$TIMEOUT_SECONDS seconds</span></li>
+            </ul>
+        </div>
+        
+        <div class="my-8"><hr class="border-0 h-px bg-gradient-to-r from-titan-blue to-gray-300"></div>
+        
+        <div class="text-center text-gray-500 italic mt-8">
+            <em>Report generated by TITAN Security Scanner</em>
+        </div>
+        
     </div>
 </body>
 </html>
