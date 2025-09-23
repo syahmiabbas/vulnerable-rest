@@ -155,10 +155,10 @@ while IFS= read -r job; do
   # Handle failed jobs separately
   if [ "$JOB_STATUS" != "completed" ]; then
     FAILED_FILES=$((FAILED_FILES + 1))
-    RESULTS_DETAILS+="### ❌ Failed to Scan: $FILE_PATH\n"
-    RESULTS_DETAILS+="- **Function:** \`$FUNCTION_NAME\`\n"
-    RESULTS_DETAILS+="- **Lines:** $START_LINE-$END_LINE\n"
-    RESULTS_DETAILS+="- **Status:** Scan failed\n\n"
+    RESULTS_DETAILS+="### ❌ Failed to Scan: $FILE_PATH"$'\n'
+    RESULTS_DETAILS+="- **Function:** \`$FUNCTION_NAME\`"$'\n'
+    RESULTS_DETAILS+="- **Lines:** $START_LINE-$END_LINE"$'\n'
+    RESULTS_DETAILS+="- **Status:** Scan failed"$'\n'$'\n'
     
     RESULTS_DETAILS_XML+="<failed><file>$FILE_PATH</file><function>$FUNCTION_NAME</function><lines>$START_LINE-$END_LINE</lines><status>failed</status></failed>"
     continue
@@ -170,28 +170,36 @@ while IFS= read -r job; do
   if [ "$IS_VULNERABLE" = "true" ]; then
     ISSUE_COUNT=$((ISSUE_COUNT + 1))
     
-    # Truncate code snippet if too long (max 200 chars)
-    TRUNCATED_CODE=$(echo "$CODE_SNIPPET" | cut -c1-200)
-    if [ ${#CODE_SNIPPET} -gt 200 ]; then
+    # Clean up code snippet - remove escape sequences and handle long code
+    CLEAN_CODE=$(echo "$CODE_SNIPPET" | sed 's/\\n/\n/g' | sed 's/\\t/    /g' | sed 's/\\"/"/g')
+    
+    # Truncate code snippet if too long (max 500 chars for better readability)
+    if [ ${#CLEAN_CODE} -gt 500 ]; then
+      TRUNCATED_CODE=$(echo "$CLEAN_CODE" | cut -c1-500)
       TRUNCATED_CODE="${TRUNCATED_CODE}..."
+    else
+      TRUNCATED_CODE="$CLEAN_CODE"
     fi
     
-    RESULTS_DETAILS+="### 🚨 Vulnerability Found: $FILE_PATH\n"
-    RESULTS_DETAILS+="- **Function:** \`$FUNCTION_NAME\`\n"
-    RESULTS_DETAILS+="- **Lines:** $START_LINE-$END_LINE\n"
-    RESULTS_DETAILS+="- **Severity:** $SEVERITY\n"
-    RESULTS_DETAILS+="- **Score:** $SCORE ($CONFIDENCE confidence)\n"
-    RESULTS_DETAILS+="- **Code Length:** $CODE_LENGTH characters\n"
-    RESULTS_DETAILS+="- **Inference Time:** ${INFERENCE_TIME}s\n"
-    RESULTS_DETAILS+="- **Code Snippet:**\n\`\`\`\n$TRUNCATED_CODE\n\`\`\`\n\n"
+    RESULTS_DETAILS+="### 🚨 Vulnerability Found: $FILE_PATH"$'\n'
+    RESULTS_DETAILS+="- **Function:** \`$FUNCTION_NAME\`"$'\n'
+    RESULTS_DETAILS+="- **Lines:** $START_LINE-$END_LINE"$'\n'
+    RESULTS_DETAILS+="- **Severity:** $SEVERITY"$'\n'
+    RESULTS_DETAILS+="- **Score:** $SCORE ($CONFIDENCE confidence)"$'\n'
+    RESULTS_DETAILS+="- **Code Length:** $CODE_LENGTH characters"$'\n'
+    RESULTS_DETAILS+="- **Inference Time:** ${INFERENCE_TIME}s"$'\n'
+    RESULTS_DETAILS+="- **Code Snippet:**"$'\n'
+    RESULTS_DETAILS+="\`\`\`"$'\n'
+    RESULTS_DETAILS+="$TRUNCATED_CODE"$'\n'
+    RESULTS_DETAILS+="\`\`\`"$'\n'$'\n'
     
     RESULTS_DETAILS_XML+="<vulnerability><file>$FILE_PATH</file><function>$FUNCTION_NAME</function><lines>$START_LINE-$END_LINE</lines><severity>$SEVERITY</severity><score>$SCORE</score><confidence>$CONFIDENCE</confidence><codeLength>$CODE_LENGTH</codeLength><inferenceTime>$INFERENCE_TIME</inferenceTime><codeSnippet><![CDATA[$CODE_SNIPPET]]></codeSnippet></vulnerability>"
   else
-    RESULTS_DETAILS+="### ✅ Clean: $FILE_PATH\n"
-    RESULTS_DETAILS+="- **Function:** \`$FUNCTION_NAME\`\n"
-    RESULTS_DETAILS+="- **Lines:** $START_LINE-$END_LINE\n"
-    RESULTS_DETAILS+="- **Score:** $SCORE ($CONFIDENCE confidence)\n"
-    RESULTS_DETAILS+="- **Status:** No security issues detected\n\n"
+    RESULTS_DETAILS+="### ✅ Clean: $FILE_PATH"$'\n'
+    RESULTS_DETAILS+="- **Function:** \`$FUNCTION_NAME\`"$'\n'
+    RESULTS_DETAILS+="- **Lines:** $START_LINE-$END_LINE"$'\n'
+    RESULTS_DETAILS+="- **Score:** $SCORE ($CONFIDENCE confidence)"$'\n'
+    RESULTS_DETAILS+="- **Status:** No security issues detected"$'\n'$'\n'
     
     RESULTS_DETAILS_XML+="<file><path>$FILE_PATH</path><function>$FUNCTION_NAME</function><lines>$START_LINE-$END_LINE</lines><status>clean</status><score>$SCORE</score><confidence>$CONFIDENCE</confidence><codeLength>$CODE_LENGTH</codeLength><inferenceTime>$INFERENCE_TIME</inferenceTime></file>"
   fi
@@ -416,7 +424,8 @@ HTMLEOF
 HTMLEOF
 
         # Now add the detailed results with proper parsing
-        while IFS= read -r line; do
+        # Use printf to properly handle the cleaned markdown
+        printf '%s\n' "$RESULTS_DETAILS" | while IFS= read -r line; do
           if [[ "$line" =~ ^###\ 🚨 ]]; then
             # Start vulnerability card
             title="${line#*🚨 }"
@@ -425,7 +434,7 @@ HTMLEOF
             <h3 class="text-xl font-semibold text-danger mb-4 flex items-center">
                 <span class="text-2xl mr-2">🚨</span> 
 CARDEOF
-            echo "$title" >> security_report.html
+            printf '%s\n' "$title" >> security_report.html
             cat >> security_report.html << 'CARDEOF'
             </h3>
             <div class="space-y-3">
@@ -438,7 +447,7 @@ CARDEOF
             <h3 class="text-xl font-semibold text-success mb-4 flex items-center">
                 <span class="text-2xl mr-2">✅</span> 
 CARDEOF
-            echo "$title" >> security_report.html
+            printf '%s\n' "$title" >> security_report.html
             cat >> security_report.html << 'CARDEOF'
             </h3>
             <div class="space-y-3">
@@ -451,7 +460,7 @@ CARDEOF
             <h3 class="text-xl font-semibold text-warning mb-4 flex items-center">
                 <span class="text-2xl mr-2">❌</span> 
 CARDEOF
-            echo "$title" >> security_report.html
+            printf '%s\n' "$title" >> security_report.html
             cat >> security_report.html << 'CARDEOF'
             </h3>
             <div class="space-y-3">
@@ -467,8 +476,8 @@ CARDEOF
             fi
             
             # Escape HTML characters
-            value=$(echo "$value" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
-            property=$(echo "$property" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+            value=$(printf '%s\n' "$value" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+            property=$(printf '%s\n' "$property" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
             
             cat >> security_report.html << PROPEOF
                 <div class="flex items-start mb-3">
@@ -493,8 +502,8 @@ CODEEOF
             fi
           elif [[ "$in_code_block" == "true" ]]; then
             # Code content - escape HTML and preserve formatting
-            escaped_line=$(echo "$line" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
-            echo "$escaped_line" >> security_report.html
+            escaped_line=$(printf '%s\n' "$line" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+            printf '%s\n' "$escaped_line" >> security_report.html
           elif [[ "$line" == "" ]]; then
             # Empty line - close current card if we're in one
             if [[ "$prev_line" =~ ^- ]] || [[ "$prev_line" =~ ^\`\`\`$ ]]; then
@@ -506,7 +515,7 @@ CLOSEEOF
             fi
           fi
           prev_line="$line"
-        done <<< "$RESULTS_DETAILS"
+        done
         
         # Close any remaining open card
         cat >> security_report.html << 'FINALEOF'

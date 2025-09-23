@@ -5,8 +5,15 @@ const path = require('path');
 
 // Enhanced HTML template for PDF generation with TailwindCSS
 function markdownToHtml(markdownContent) {
+  // Clean up the content first - handle escaped newlines and improve formatting
+  const cleanedContent = markdownContent
+    .replace(/\\n/g, '\n')  // Convert literal \n to actual newlines
+    .replace(/\\t/g, '    ') // Convert tabs to spaces
+    .replace(/\\"/g, '"')    // Fix escaped quotes
+    .replace(/\n\n+/g, '\n\n'); // Normalize multiple newlines
+  
   // Split content into lines for better processing
-  const lines = markdownContent.split('\n');
+  const lines = cleanedContent.split('\n');
   let html = '';
   let inCodeBlock = false;
   let inCard = false;
@@ -30,7 +37,7 @@ function markdownToHtml(markdownContent) {
     }
     
     if (inCodeBlock) {
-      // Escape HTML characters in code
+      // Escape HTML characters in code and preserve formatting
       html += line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '\n';
       continue;
     }
@@ -104,9 +111,9 @@ function markdownToHtml(markdownContent) {
         tableRows.push(`<tr class="hover:bg-blue-50 transition-colors duration-200">${bodyCells}</tr>`);
       }
     }
-    // Handle list items
-    else if (line.match(/^- \*\*(.*?)\*\*: (.*)$/)) {
-      const match = line.match(/^- \*\*(.*?)\*\*: (.*)$/);
+    // Handle list items with better regex
+    else if (line.match(/^- \*\*(.*?)\*\*:\s*(.*)$/)) {
+      const match = line.match(/^- \*\*(.*?)\*\*:\s*(.*)$/);
       const property = match[1];
       let value = match[2];
       
@@ -145,10 +152,13 @@ function markdownToHtml(markdownContent) {
         tableRows = [];
       }
       
-      // Close card if we were in one and this is end of card content
-      if (inCard && i < lines.length - 1 && lines[i + 1].trim() !== '' && !lines[i + 1].startsWith('- ')) {
-        html += '</div></div>';
-        inCard = false;
+      // Close card if we were in one and this appears to be end of card content
+      if (inCard && i < lines.length - 1) {
+        const nextLine = lines[i + 1];
+        if (nextLine && nextLine.trim() !== '' && !nextLine.startsWith('- ') && !nextLine.trim() === '```') {
+          html += '</div></div>';
+          inCard = false;
+        }
       }
     }
     // Handle regular text
