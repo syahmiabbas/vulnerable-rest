@@ -45,6 +45,12 @@ function markdownToHtml(markdownContent) {
     // Handle headers
     if (line.startsWith('# ')) {
       html += `<h1 class="text-4xl font-bold text-white p-6 mb-8 rounded-lg gradient-header shadow-lg">🛡️ ${line.substring(2)}</h1>`;
+    } else if (line.startsWith('## 🚨')) {
+      html += `<h2 class="text-3xl font-semibold text-red-600 mt-12 mb-6 pb-3 border-b-2 border-red-600">${line.substring(3)}</h2>`;
+    } else if (line.startsWith('## ✅')) {
+      html += `<h2 class="text-3xl font-semibold text-green-600 mt-12 mb-6 pb-3 border-b-2 border-green-600">${line.substring(3)}</h2>`;
+    } else if (line.startsWith('## ❌')) {
+      html += `<h2 class="text-3xl font-semibold text-amber-600 mt-12 mb-6 pb-3 border-b-2 border-amber-600">${line.substring(3)}</h2>`;
     } else if (line.startsWith('## ')) {
       html += `<h2 class="text-3xl font-semibold text-titan-blue mt-12 mb-6 pb-3 border-b-2 border-titan-blue">${line.substring(3)}</h2>`;
     } else if (line.startsWith('### 🚨')) {
