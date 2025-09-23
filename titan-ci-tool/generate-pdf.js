@@ -2,6 +2,25 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
+
+// Check if proper arguments are provided
+if (process.argv.length < 4) {
+  console.log('Usage: node generate-pdf.js <markdown-file> <output-pdf-file>');
+  process.exit(1);
+}
+
+const markdownFile = process.argv[2];
+const outputPdfFile = process.argv[3];
+
+// Check if markdown file exists
+if (!fs.existsSync(markdownFile)) {
+  console.error(`Error: Markdown file '${markdownFile}' not found.`);
+  process.exit(1);
+}
+
+// Read markdown content
+const markdownContent = fs.readFileSync(markdownFile, 'utf8');
 
 // Enhanced HTML template for PDF generation with TailwindCSS
 function markdownToHtml(markdownContent) {
@@ -46,11 +65,9 @@ function markdownToHtml(markdownContent) {
     if (line.startsWith('# ')) {
       html += `<h1 class="text-4xl font-bold text-white p-6 mb-8 rounded-lg gradient-header shadow-lg">🛡️ ${line.substring(2)}</h1>`;
     } else if (line.startsWith('## 🚨')) {
-      html += `<h2 class="text-3xl font-semibold text-red-600 mt-12 mb-6 pb-3 border-b-2 border-red-600">${line.substring(3)}</h2>`;
+      html += `<h2 class="text-3xl font-semibold text-danger mt-12 mb-6 pb-3 border-b-2 border-danger">🚨 ${line.substring(5)}</h2>`;
     } else if (line.startsWith('## ✅')) {
-      html += `<h2 class="text-3xl font-semibold text-green-600 mt-12 mb-6 pb-3 border-b-2 border-green-600">${line.substring(3)}</h2>`;
-    } else if (line.startsWith('## ❌')) {
-      html += `<h2 class="text-3xl font-semibold text-amber-600 mt-12 mb-6 pb-3 border-b-2 border-amber-600">${line.substring(3)}</h2>`;
+      html += `<h2 class="text-3xl font-semibold text-success mt-12 mb-6 pb-3 border-b-2 border-success">✅ ${line.substring(5)}</h2>`;
     } else if (line.startsWith('## ')) {
       html += `<h2 class="text-3xl font-semibold text-titan-blue mt-12 mb-6 pb-3 border-b-2 border-titan-blue">${line.substring(3)}</h2>`;
     } else if (line.startsWith('### 🚨')) {
@@ -199,17 +216,9 @@ function markdownToHtml(markdownContent) {
   return html;
 }
 
-function generatePdfReport(markdownFile, outputFile) {
-  try {
-    // Read the markdown file
-    const markdownContent = fs.readFileSync(markdownFile, 'utf8');
-    
-    // Convert markdown to HTML
-    const htmlContent = markdownToHtml(markdownContent);
-    
-    // Create a complete HTML document with TailwindCSS
-    const htmlDocument = `
-<!DOCTYPE html>
+// Generate full HTML document
+function createHtmlDocument(content) {
+  return `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -225,16 +234,17 @@ function generatePdfReport(markdownFile, outputFile) {
                         'danger': '#ef4444',
                         'success': '#10b981',
                         'warning': '#f59e0b',
-                    },
-                    fontFamily: {
-                        'sans': ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-                    },
+                    }
                 }
             }
         }
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        body { font-family: 'Inter', sans-serif; }
+        .gradient-header {
+            background: linear-gradient(135deg, #1e3a8a 0%, #2c5aa0 50%, #3b82f6 100%);
+        }
         .vulnerability-card {
             background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
             border-left: 6px solid #ef4444;
@@ -247,9 +257,6 @@ function generatePdfReport(markdownFile, outputFile) {
             background: linear-gradient(135deg, #fffbeb 0%, #fed7aa 100%);
             border-left: 6px solid #f59e0b;
         }
-        .gradient-header {
-            background: linear-gradient(135deg, #1e3a8a 0%, #2c5aa0 50%, #3b82f6 100%);
-        }
         .code-block {
             background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
         }
@@ -261,78 +268,70 @@ function generatePdfReport(markdownFile, outputFile) {
 </head>
 <body class="bg-gray-50 font-sans leading-relaxed">
     <div class="max-w-5xl mx-auto p-8 bg-white shadow-lg rounded-lg print:shadow-none print:bg-white">
-        ${htmlContent}
+        ${content}
     </div>
 </body>
 </html>`;
-    // Try to use wkhtmltopdf if available (lightweight alternative)
-    const { exec } = require('child_process');
-    
-    // Save the HTML file first
-    const htmlFile = outputFile.replace('.pdf', '.html');
-    fs.writeFileSync(htmlFile, htmlDocument);
-    
-    // Try different lightweight PDF converters
-    exec('which wkhtmltopdf', (error) => {
-      if (!error) {
-        // wkhtmltopdf is available
-        exec(`wkhtmltopdf --page-size A4 --margin-top 15mm --margin-right 15mm --margin-bottom 15mm --margin-left 15mm "${htmlFile}" "${outputFile}"`, (error) => {
-          if (error) {
-            console.log('wkhtmltopdf failed, keeping HTML version');
-            console.log(`HTML report saved as ${htmlFile}`);
-          } else {
-            console.log(`PDF report saved as ${outputFile}`);
-            // Remove HTML file after successful PDF generation
-            fs.unlinkSync(htmlFile);
-          }
-        });
-      } else {
-        // Check if chromium/google-chrome is available for headless PDF generation
-        exec('which google-chrome || which chromium-browser || which chromium', (error, stdout) => {
-          if (!error && stdout.trim()) {
-            const browser = stdout.trim();
-            exec(`"${browser}" --headless --disable-gpu --print-to-pdf="${outputFile}" --no-margins "${htmlFile}"`, (error) => {
-              if (error) {
-                console.log('Chrome/Chromium PDF generation failed, keeping HTML version');
-                console.log(`HTML report saved as ${htmlFile}`);
-              } else {
-                console.log(`PDF report saved as ${outputFile}`);
-                // Remove HTML file after successful PDF generation
-                fs.unlinkSync(htmlFile);
-              }
-            });
-          } else {
-            // No PDF converters available, just keep the HTML
-            console.log('No PDF converters available (wkhtmltopdf, chrome, chromium)');
-            console.log(`Styled HTML report saved as ${htmlFile}`);
-            console.log('You can open this HTML file in a browser and print to PDF manually');
-          }
-        });
-      }
-    });
-    
-  } catch (error) {
-    console.error('Error generating PDF report:', error.message);
-    process.exit(1);
+}
+
+// Convert markdown to HTML
+const htmlContent = markdownToHtml(markdownContent);
+const fullHtml = createHtmlDocument(htmlContent);
+
+// Write HTML to temp file
+const tempHtmlFile = path.join(path.dirname(outputPdfFile), 'temp_report.html');
+fs.writeFileSync(tempHtmlFile, fullHtml);
+
+console.log('✅ HTML file generated successfully');
+
+// Try different PDF generation methods
+let pdfGenerated = false;
+
+// Method 1: Try wkhtmltopdf (lightweight, good for production)
+try {
+  execSync(`wkhtmltopdf --page-size A4 --margin-top 15mm --margin-right 15mm --margin-bottom 15mm --margin-left 15mm "${tempHtmlFile}" "${outputPdfFile}"`, { stdio: 'pipe' });
+  console.log('✅ PDF generated using wkhtmltopdf');
+  pdfGenerated = true;
+} catch (error) {
+  console.log('⚠️  wkhtmltopdf not available, trying alternative methods...');
+}
+
+// Method 2: Try Chrome/Chromium headless (good quality, but requires Chrome)
+if (!pdfGenerated) {
+  const chromeCommands = [
+    'google-chrome',
+    'chromium-browser', 
+    'chromium',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+  ];
+  
+  for (const chromeCmd of chromeCommands) {
+    try {
+      execSync(`"${chromeCmd}" --headless --disable-gpu --print-to-pdf="${outputPdfFile}" --print-to-pdf-no-header "${tempHtmlFile}"`, { stdio: 'pipe' });
+      console.log('✅ PDF generated using Chrome/Chromium');
+      pdfGenerated = true;
+      break;
+    } catch (error) {
+      // Try next Chrome command
+    }
   }
 }
 
-// Main execution
-if (require.main === module) {
-  const args = process.argv.slice(2);
-  if (args.length !== 2) {
-    console.error('Usage: node generate-pdf.js <markdown-file> <output-pdf-file>');
-    process.exit(1);
-  }
-  
-  const [markdownFile, outputFile] = args;
-  
-  if (!fs.existsSync(markdownFile)) {
-    console.error(`Error: Markdown file "${markdownFile}" not found`);
-    process.exit(1);
-  }
-  
-  generatePdfReport(markdownFile, outputFile);
+// Method 3: Keep HTML as fallback
+if (!pdfGenerated) {
+  const htmlOutputFile = outputPdfFile.replace('.pdf', '.html');
+  fs.copyFileSync(tempHtmlFile, htmlOutputFile);
+  console.log(`⚠️  PDF generation failed, but HTML report saved as: ${htmlOutputFile}`);
+  console.log('To generate PDF manually, install wkhtmltopdf or Chrome/Chromium');
 }
 
-module.exports = { generatePdfReport };
+// Clean up temp file
+try {
+  fs.unlinkSync(tempHtmlFile);
+} catch (error) {
+  // Ignore cleanup errors
+}
+
+process.exit(pdfGenerated ? 0 : 1);

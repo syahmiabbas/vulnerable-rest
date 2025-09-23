@@ -110,7 +110,6 @@ RESULTS_DETAILS=""
 RESULTS_DETAILS_XML=""
 VULNERABLE_RESULTS=""
 CLEAN_RESULTS=""
-FAILED_RESULTS=""
 
 # Process each job
 while IFS= read -r job; do
@@ -139,9 +138,9 @@ while IFS= read -r job; do
     SEVERITY=$(echo "$job" | jq -r '.result.severity // "UNKNOWN"')
     INFERENCE_TIME=$(echo "$job" | jq -r '.result.inference_time_seconds // 0')
     CODE_LENGTH=$(echo "$job" | jq -r '.result.code_length // 0')
-    DESCRIPTION=$(echo "$job" | jq -r '.result.description // .result.vulnerability_description // .result.explanation // empty')
-    VULNERABILITY_TYPE=$(echo "$job" | jq -r '.result.vulnerability_type // .result.type // empty')
-    CWE_ID=$(echo "$job" | jq -r '.result.cwe_id // .result.cwe // empty')
+    ANALYSIS=$(echo "$job" | jq -r '.result.analysis // empty')
+    PREDICTION=$(echo "$job" | jq -r '.result.prediction // 0')
+    THRESHOLD=$(echo "$job" | jq -r '.result.threshold // 0.6')
   else
     # Fallback sed parsing (less reliable)
     FILE_PATH=$(echo "$job" | grep -o '"input":\s*{[^}]*"filePath":\s*"[^"]*"' | sed 's/.*"filePath":\s*"//' | sed 's/".*//')
@@ -156,18 +155,18 @@ while IFS= read -r job; do
     SEVERITY=$(echo "$job" | grep -o '"result":\s*{[^}]*"severity":\s*"[^"]*"' | sed 's/.*"severity":\s*"//' | sed 's/".*//' | head -1)
     INFERENCE_TIME=$(echo "$job" | grep -o '"result":\s*{[^}]*"inference_time_seconds":\s*[0-9.]*' | sed 's/.*"inference_time_seconds":\s*//' | head -1)
     CODE_LENGTH=$(echo "$job" | grep -o '"result":\s*{[^}]*"code_length":\s*[0-9]*' | sed 's/.*"code_length":\s*//' | head -1)
-    DESCRIPTION=$(echo "$job" | grep -o '"result":\s*{[^}]*"description":\s*"[^"]*"' | sed 's/.*"description":\s*"//' | sed 's/".*//' | head -1)
-    VULNERABILITY_TYPE=$(echo "$job" | grep -o '"result":\s*{[^}]*"vulnerability_type":\s*"[^"]*"' | sed 's/.*"vulnerability_type":\s*"//' | sed 's/".*//' | head -1)
-    CWE_ID=$(echo "$job" | grep -o '"result":\s*{[^}]*"cwe_id":\s*"[^"]*"' | sed 's/.*"cwe_id":\s*"//' | sed 's/".*//' | head -1)
+    ANALYSIS=$(echo "$job" | grep -o '"result":\s*{[^}]*"analysis":\s*"[^"]*"' | sed 's/.*"analysis":\s*"//' | sed 's/".*//' | head -1)
+    PREDICTION=$(echo "$job" | grep -o '"result":\s*{[^}]*"prediction":\s*[0-9]*' | sed 's/.*"prediction":\s*//' | head -1)
+    THRESHOLD=$(echo "$job" | grep -o '"result":\s*{[^}]*"threshold":\s*[0-9.]*' | sed 's/.*"threshold":\s*//' | head -1)
   fi
   
   # Handle failed jobs separately
   if [ "$JOB_STATUS" != "completed" ]; then
     FAILED_FILES=$((FAILED_FILES + 1))
-    FAILED_RESULTS+="### ❌ Failed to Scan: $FILE_PATH"$'\n'
-    FAILED_RESULTS+="- **Function:** \`$FUNCTION_NAME\`"$'\n'
-    FAILED_RESULTS+="- **Lines:** $START_LINE-$END_LINE"$'\n'
-    FAILED_RESULTS+="- **Status:** Scan failed"$'\n'$'\n'
+    RESULTS_DETAILS+="### ❌ Failed to Scan: $FILE_PATH"$'\n'
+    RESULTS_DETAILS+="- **Function:** \`$FUNCTION_NAME\`"$'\n'
+    RESULTS_DETAILS+="- **Lines:** $START_LINE-$END_LINE"$'\n'
+    RESULTS_DETAILS+="- **Status:** Scan failed"$'\n'$'\n'
     
     RESULTS_DETAILS_XML+="<failed><file>$FILE_PATH</file><function>$FUNCTION_NAME</function><lines>$START_LINE-$END_LINE</lines><status>failed</status></failed>"
     continue
@@ -176,41 +175,36 @@ while IFS= read -r job; do
   # Only count completed jobs for scoring
   TOTAL_FILES=$((TOTAL_FILES + 1))
   
-  # Clean up code snippet - remove escape sequences and handle long code
-  CLEAN_CODE=$(echo "$CODE_SNIPPET" | sed 's/\\n/\n/g' | sed 's/\\t/    /g' | sed 's/\\"/"/g')
-  
-  # Truncate code snippet if too long (max 500 chars for better readability)
-  if [ ${#CLEAN_CODE} -gt 500 ]; then
-    TRUNCATED_CODE=$(echo "$CLEAN_CODE" | cut -c1-500)
-    TRUNCATED_CODE="${TRUNCATED_CODE}..."
-  else
-    TRUNCATED_CODE="$CLEAN_CODE"
-  fi
-  
   if [ "$IS_VULNERABLE" = "true" ]; then
     ISSUE_COUNT=$((ISSUE_COUNT + 1))
+    
+    # Clean up code snippet - remove escape sequences and handle long code
+    CLEAN_CODE=$(echo "$CODE_SNIPPET" | sed 's/\\n/\n/g' | sed 's/\\t/    /g' | sed 's/\\"/"/g')
+    
+    # Truncate code snippet if too long (max 500 chars for better readability)
+    if [ ${#CLEAN_CODE} -gt 500 ]; then
+      TRUNCATED_CODE=$(echo "$CLEAN_CODE" | cut -c1-500)
+      TRUNCATED_CODE="${TRUNCATED_CODE}..."
+    else
+      TRUNCATED_CODE="$CLEAN_CODE"
+    fi
     
     VULNERABLE_RESULTS+="### 🚨 Vulnerability Found: $FILE_PATH"$'\n'
     VULNERABLE_RESULTS+="- **Function:** \`$FUNCTION_NAME\`"$'\n'
     VULNERABLE_RESULTS+="- **Lines:** $START_LINE-$END_LINE"$'\n'
     VULNERABLE_RESULTS+="- **Severity:** $SEVERITY"$'\n'
     VULNERABLE_RESULTS+="- **Score:** $SCORE ($CONFIDENCE confidence)"$'\n'
-    
-    # Add vulnerability type if available
-    if [ -n "$VULNERABILITY_TYPE" ] && [ "$VULNERABILITY_TYPE" != "null" ] && [ "$VULNERABILITY_TYPE" != "empty" ]; then
-      VULNERABLE_RESULTS+="- **Vulnerability Type:** $VULNERABILITY_TYPE"$'\n'
+    VULNERABLE_RESULTS+="- **Prediction:** $PREDICTION (threshold: $THRESHOLD)"$'\n'
+    if [ -n "$ANALYSIS" ] && [ "$ANALYSIS" != "null" ] && [ "$ANALYSIS" != "empty" ]; then
+      # Truncate analysis if too long (max 800 chars for readability)
+      if [ ${#ANALYSIS} -gt 800 ]; then
+        TRUNCATED_ANALYSIS=$(echo "$ANALYSIS" | cut -c1-800)
+        TRUNCATED_ANALYSIS="${TRUNCATED_ANALYSIS}..."
+      else
+        TRUNCATED_ANALYSIS="$ANALYSIS"
+      fi
+      VULNERABLE_RESULTS+="- **Analysis:** $TRUNCATED_ANALYSIS"$'\n'
     fi
-    
-    # Add CWE ID if available
-    if [ -n "$CWE_ID" ] && [ "$CWE_ID" != "null" ] && [ "$CWE_ID" != "empty" ]; then
-      VULNERABLE_RESULTS+="- **CWE ID:** $CWE_ID"$'\n'
-    fi
-    
-    # Add description if available
-    if [ -n "$DESCRIPTION" ] && [ "$DESCRIPTION" != "null" ] && [ "$DESCRIPTION" != "empty" ]; then
-      VULNERABLE_RESULTS+="- **Description:** $DESCRIPTION"$'\n'
-    fi
-    
     VULNERABLE_RESULTS+="- **Code Length:** $CODE_LENGTH characters"$'\n'
     VULNERABLE_RESULTS+="- **Inference Time:** ${INFERENCE_TIME}s"$'\n'
     VULNERABLE_RESULTS+="- **Code Snippet:**"$'\n'
@@ -218,15 +212,26 @@ while IFS= read -r job; do
     VULNERABLE_RESULTS+="$TRUNCATED_CODE"$'\n'
     VULNERABLE_RESULTS+="\`\`\`"$'\n'$'\n'
     
-    RESULTS_DETAILS_XML+="<vulnerability><file>$FILE_PATH</file><function>$FUNCTION_NAME</function><lines>$START_LINE-$END_LINE</lines><severity>$SEVERITY</severity><score>$SCORE</score><confidence>$CONFIDENCE</confidence><description>$DESCRIPTION</description><vulnerabilityType>$VULNERABILITY_TYPE</vulnerabilityType><cweId>$CWE_ID</cweId><codeLength>$CODE_LENGTH</codeLength><inferenceTime>$INFERENCE_TIME</inferenceTime><codeSnippet><![CDATA[$CODE_SNIPPET]]></codeSnippet></vulnerability>"
+    RESULTS_DETAILS_XML+="<vulnerability><file>$FILE_PATH</file><function>$FUNCTION_NAME</function><lines>$START_LINE-$END_LINE</lines><severity>$SEVERITY</severity><score>$SCORE</score><confidence>$CONFIDENCE</confidence><prediction>$PREDICTION</prediction><threshold>$THRESHOLD</threshold><analysis><![CDATA[$ANALYSIS]]></analysis><codeLength>$CODE_LENGTH</codeLength><inferenceTime>$INFERENCE_TIME</inferenceTime><codeSnippet><![CDATA[$CODE_SNIPPET]]></codeSnippet></vulnerability>"
   else
+    # Clean up code snippet for clean functions too
+    CLEAN_CODE=$(echo "$CODE_SNIPPET" | sed 's/\\n/\n/g' | sed 's/\\t/    /g' | sed 's/\\"/"/g')
+    
+    # Truncate code snippet if too long (max 500 chars for better readability)
+    if [ ${#CLEAN_CODE} -gt 500 ]; then
+      TRUNCATED_CODE=$(echo "$CLEAN_CODE" | cut -c1-500)
+      TRUNCATED_CODE="${TRUNCATED_CODE}..."
+    else
+      TRUNCATED_CODE="$CLEAN_CODE"
+    fi
+    
     CLEAN_RESULTS+="### ✅ Clean: $FILE_PATH"$'\n'
     CLEAN_RESULTS+="- **Function:** \`$FUNCTION_NAME\`"$'\n'
     CLEAN_RESULTS+="- **Lines:** $START_LINE-$END_LINE"$'\n'
     CLEAN_RESULTS+="- **Score:** $SCORE ($CONFIDENCE confidence)"$'\n'
+    CLEAN_RESULTS+="- **Status:** No security issues detected"$'\n'
     CLEAN_RESULTS+="- **Code Length:** $CODE_LENGTH characters"$'\n'
     CLEAN_RESULTS+="- **Inference Time:** ${INFERENCE_TIME}s"$'\n'
-    CLEAN_RESULTS+="- **Status:** No security issues detected"$'\n'
     CLEAN_RESULTS+="- **Code Snippet:**"$'\n'
     CLEAN_RESULTS+="\`\`\`"$'\n'
     CLEAN_RESULTS+="$TRUNCATED_CODE"$'\n'
@@ -236,29 +241,27 @@ while IFS= read -r job; do
   fi
 done < <(echo "$JOBS_DATA")
 
-# Combine results in order: Vulnerabilities first, then clean, then failed
-RESULTS_DETAILS=""
-if [ -n "$VULNERABLE_RESULTS" ]; then
-  RESULTS_DETAILS+="## 🚨 Security Vulnerabilities"$'\n'$'\n'
-  RESULTS_DETAILS+="$VULNERABLE_RESULTS"
-fi
-
-if [ -n "$CLEAN_RESULTS" ]; then
-  RESULTS_DETAILS+="## ✅ Clean Code (No Issues Found)"$'\n'$'\n'
-  RESULTS_DETAILS+="$CLEAN_RESULTS"
-fi
-
-if [ -n "$FAILED_RESULTS" ]; then
-  RESULTS_DETAILS+="## ❌ Failed Scans"$'\n'$'\n'
-  RESULTS_DETAILS+="$FAILED_RESULTS"
-fi
-
 # Generate report based on format
 echo "Generating security report in $REPORT_FORMAT format..."
 
 PERCENT=0
 if [ $TOTAL_FILES -gt 0 ]; then
   PERCENT=$((ISSUE_COUNT * 100 / TOTAL_FILES))
+fi
+
+# Combine results with vulnerabilities first, then clean functions
+RESULTS_DETAILS=""
+if [ -n "$VULNERABLE_RESULTS" ]; then
+  RESULTS_DETAILS+="## 🚨 Vulnerable Functions"$'\n'$'\n'
+  RESULTS_DETAILS+="$VULNERABLE_RESULTS"
+fi
+
+if [ -n "$CLEAN_RESULTS" ]; then
+  if [ -n "$VULNERABLE_RESULTS" ]; then
+    RESULTS_DETAILS+=$'\n'"---"$'\n'$'\n'
+  fi
+  RESULTS_DETAILS+="## ✅ Clean Functions"$'\n'$'\n'
+  RESULTS_DETAILS+="$CLEAN_RESULTS"
 fi
 
 if [ "$REPORT_FORMAT" == "md" ]; then
@@ -474,22 +477,7 @@ HTMLEOF
         # Now add the detailed results with proper parsing
         # Use printf to properly handle the cleaned markdown
         printf '%s\n' "$RESULTS_DETAILS" | while IFS= read -r line; do
-          if [[ "$line" =~ ^##\ 🚨.*Security\ Vulnerabilities ]]; then
-            # Security vulnerabilities section header
-            cat >> security_report.html << 'SECTIONEOF'
-        <h2 class="text-3xl font-semibold text-red-600 mt-12 mb-6 pb-3 border-b-2 border-red-600">🚨 Security Vulnerabilities</h2>
-SECTIONEOF
-          elif [[ "$line" =~ ^##\ ✅.*Clean\ Code ]]; then
-            # Clean code section header
-            cat >> security_report.html << 'SECTIONEOF'
-        <h2 class="text-3xl font-semibold text-green-600 mt-12 mb-6 pb-3 border-b-2 border-green-600">✅ Clean Code (No Issues Found)</h2>
-SECTIONEOF
-          elif [[ "$line" =~ ^##\ ❌.*Failed\ Scans ]]; then
-            # Failed scans section header
-            cat >> security_report.html << 'SECTIONEOF'
-        <h2 class="text-3xl font-semibold text-amber-600 mt-12 mb-6 pb-3 border-b-2 border-amber-600">❌ Failed Scans</h2>
-SECTIONEOF
-          elif [[ "$line" =~ ^###\ 🚨 ]]; then
+          if [[ "$line" =~ ^###\ 🚨 ]]; then
             # Start vulnerability card
             title="${line#*🚨 }"
             cat >> security_report.html << 'CARDEOF'
