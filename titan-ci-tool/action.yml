@@ -49,18 +49,40 @@ runs:
         BLOCKING: ${{ inputs.blocking }}
         BLOCK_PERCENTAGE: ${{ inputs.block_percentage }}
       
-    - name: Install pandoc for PDF reports
+    - name: Setup lightweight PDF generation tools
       if: ${{ inputs.report_format == 'pdf' }}
       shell: bash
       run: |
-        if ! command -v pandoc >/dev/null 2>&1; then
-          echo "Installing pandoc for PDF report generation..."
-          # Install pandoc and texlive for PDF generation
-          sudo apt-get update
-          sudo apt-get install -y pandoc texlive-latex-base texlive-fonts-recommended texlive-extra-utils texlive-latex-extra
-          echo "Pandoc installed successfully"
+        echo "Setting up lightweight PDF generation..."
+        
+        # Check if Node.js is available (preferred method)
+        if command -v node >/dev/null 2>&1; then
+          echo "Node.js is available for PDF generation"
+          node_version=$(node --version)
+          echo "Node.js version: $node_version"
         else
-          echo "Pandoc is already installed"
+          # Try to install wkhtmltopdf as a lightweight alternative
+          echo "Node.js not available, trying to install wkhtmltopdf as lightweight alternative..."
+          
+          # Check OS and install accordingly
+          if command -v apt-get >/dev/null 2>&1; then
+            # Ubuntu/Debian
+            sudo apt-get update -qq >/dev/null 2>&1
+            sudo apt-get install -y -qq wkhtmltopdf >/dev/null 2>&1 && echo "wkhtmltopdf installed successfully" || echo "Failed to install wkhtmltopdf, will fall back to HTML output"
+          elif command -v yum >/dev/null 2>&1; then
+            # RHEL/CentOS
+            sudo yum install -y -q wkhtmltopdf >/dev/null 2>&1 && echo "wkhtmltopdf installed successfully" || echo "Failed to install wkhtmltopdf, will fall back to HTML output"
+          elif command -v apk >/dev/null 2>&1; then
+            # Alpine
+            sudo apk add --no-cache wkhtmltopdf >/dev/null 2>&1 && echo "wkhtmltopdf installed successfully" || echo "Failed to install wkhtmltopdf, will fall back to HTML output"
+          else
+            echo "Unknown package manager, checking if Chrome/Chromium is available..."
+            if command -v google-chrome >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
+              echo "Chrome/Chromium found, will use for PDF generation"
+            else
+              echo "No PDF generation tools available, will output styled HTML instead"
+            fi
+          fi
         fi
       
     - name: Check scan progress
