@@ -82,7 +82,7 @@ Replace `<your-org>/<your-repo>` with your actual GitHub organization and reposi
 - The tool connects to a single SSE endpoint: `/chat?stream=true` for real-time scan progress
 - Sends repository URL in the request body as `{"content": "github_url"}`
 - Processes findings data directly from SSE events
-- **PDF generation** requires `wkhtmltopdf` or Node.js for optimal formatting
+- **PDF generation** requires Node.js for optimal formatting
 - **Markdown sanitization** automatically fixes code block formatting, line breaks, and content issues
 - **Report formats** include professional styling and detailed vulnerability analysis
 - **XML output** provides structured data for integration with security tools and CI/CD pipelines
@@ -104,7 +104,7 @@ Replace `<your-org>/<your-repo>` with your actual GitHub organization and reposi
 - TailwindCSS styling for modern appearance
 - Color-coded vulnerability cards and risk indicators
 - Responsive design that works well in print
-- Requires `wkhtmltopdf` or Node.js with `generate-pdf.js` for optimal rendering
+- Requires Node.js with `generate-pdf.js` for optimal rendering
 
 ### XML Format (xml)
 - Structured data format for tool integration
