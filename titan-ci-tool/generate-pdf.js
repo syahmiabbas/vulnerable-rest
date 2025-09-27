@@ -388,11 +388,42 @@ if (!pdfGenerated) {
   
   for (const chromeCmd of chromeCommands) {
     try {
-      execSync(`"${chromeCmd}" --headless --disable-gpu --print-to-pdf="${outputPdfFile}" --print-to-pdf-no-header "${tempHtmlFile}"`, { stdio: 'pipe' });
-      console.log('✅ PDF generated using Chrome/Chromium');
-      pdfGenerated = true;
-      break;
+      console.log(`🔍 Trying Chrome command: ${chromeCmd}`);
+      
+      // Add timeout and better options for Chrome
+      const chromeOptions = [
+        '--headless',
+        '--disable-gpu',
+        '--no-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-extensions',
+        '--disable-plugins',
+        '--disable-images',
+        '--disable-javascript',
+        '--run-all-compositor-stages-before-draw',
+        '--virtual-time-budget=1000',
+        `--print-to-pdf="${outputPdfFile}"`,
+        '--print-to-pdf-no-header',
+        `"${tempHtmlFile}"`
+      ];
+      
+      const chromeCommand = `"${chromeCmd}" ${chromeOptions.join(' ')}`;
+      
+      execSync(chromeCommand, { 
+        stdio: 'ignore',  // Changed from 'pipe' to 'ignore' to prevent hanging
+        timeout: 30000    // 30 second timeout
+      });
+      
+      // Check if PDF was actually created
+      if (fs.existsSync(outputPdfFile)) {
+        console.log('✅ PDF generated using Chrome/Chromium');
+        pdfGenerated = true;
+        break;
+      } else {
+        console.log('❌ Chrome executed but no PDF file created');
+      }
     } catch (error) {
+      console.log(`❌ Chrome command failed: ${error.message || 'Unknown error'}`);
       // Try next Chrome command
     }
   }
@@ -403,14 +434,25 @@ if (!pdfGenerated) {
   const htmlOutputFile = outputPdfFile.replace('.pdf', '.html');
   fs.copyFileSync(tempHtmlFile, htmlOutputFile);
   console.log(`⚠️  PDF generation failed, but HTML report saved as: ${htmlOutputFile}`);
-  console.log('To generate PDF manually, use Chrome/Chromium');
+  console.log('💡 Possible issues:');
+  console.log('   - Chrome/Chromium not installed or not in PATH');
+  console.log('   - Chrome hanging due to system restrictions');
+  console.log('   - File permissions issues');
+  console.log('   - Insufficient system resources');
+  console.log('To generate PDF manually: use Chrome to print the HTML file as PDF');
 }
 
 // Clean up temp file
 try {
   fs.unlinkSync(tempHtmlFile);
+  console.log('🧹 Temporary HTML file cleaned up');
 } catch (error) {
-  // Ignore cleanup errors
+  console.log('⚠️  Could not clean up temporary file:', error.message);
 }
+
+console.log('📊 PDF Generation Summary:');
+console.log(`   Status: ${pdfGenerated ? 'SUCCESS' : 'FAILED'}`);
+console.log(`   Input:  ${markdownFile}`);
+console.log(`   Output: ${pdfGenerated ? outputPdfFile : outputPdfFile.replace('.pdf', '.html')}`);
 
 process.exit(pdfGenerated ? 0 : 1);

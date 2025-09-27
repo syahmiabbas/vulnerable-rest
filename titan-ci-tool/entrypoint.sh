@@ -466,20 +466,37 @@ EOF
   if [ -f "$PDF_GENERATOR" ]; then
     echo "Converting report to PDF using Node.js converter..."
     if command -v node >/dev/null 2>&1; then
-      if node "$PDF_GENERATOR" security_report.md security_report.pdf; then
-        echo "PDF report saved as security_report.pdf"
+      echo "⏱️  Starting PDF generation with 60-second timeout..."
+      
+      # Use timeout command to prevent hanging (available on most systems)
+      if command -v timeout >/dev/null 2>&1; then
+        if timeout 60 node "$PDF_GENERATOR" security_report.md security_report.pdf 2>&1; then
+          echo "✅ PDF report saved as security_report.pdf"
+        else
+          PDF_EXIT_CODE=$?
+          echo "❌ PDF generation failed (exit code: $PDF_EXIT_CODE) or timed out after 60 seconds"
+          echo "📄 Markdown report saved as security_report.md"
+          echo "💡 Tip: PDF generation may fail if Chrome/Chromium is not available or accessible"
+        fi
       else
-        echo "PDF generation failed, keeping markdown report"
-        echo "Markdown report saved as security_report.md"
+        # Fallback without timeout for systems that don't have it
+        echo "⚠️  No timeout command available, trying PDF generation without timeout protection..."
+        if node "$PDF_GENERATOR" security_report.md security_report.pdf 2>&1; then
+          echo "✅ PDF report saved as security_report.pdf"
+        else
+          echo "❌ PDF generation failed, keeping markdown report"
+          echo "📄 Markdown report saved as security_report.md"
+          echo "💡 If this hangs, PDF generation may be waiting for Chrome/Chromium"
+        fi
       fi
     else
-      echo "Node.js not available. Saving as markdown only."
-      echo "Markdown report saved as security_report.md"
-      echo "To generate PDF: install Node.js, then run: node generate-pdf.js security_report.md security_report.pdf"
+      echo "❌ Node.js not available. Saving as markdown only."
+      echo "📄 Markdown report saved as security_report.md"
+      echo "💡 To generate PDF: install Node.js, then run: node generate-pdf.js security_report.md security_report.pdf"
     fi
   else
-    echo "PDF generator script not found, saving as markdown only"
-    echo "Markdown report saved as security_report.md"
+    echo "❌ PDF generator script not found, saving as markdown only"
+    echo "📄 Markdown report saved as security_report.md"
   fi
 
 elif [ "$REPORT_FORMAT" == "xml" ]; then
