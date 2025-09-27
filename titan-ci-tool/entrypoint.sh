@@ -63,9 +63,12 @@ echo "Request data: {\"content\": \"$REPO_URL\"}"
 FINDINGS_JSON=""
 FINDINGS_COUNT=0
 JOB_ID=""
+ALL_FINDINGS_JSON="[]"
+TOTAL_FINDINGS_COUNT=0
 
 # Create temporary file for storing SSE data
 TEMP_SSE_FILE="/tmp/sse_output_$$"
+TEMP_FINDINGS_FILE="/tmp/findings_$$"
 
 # Start SSE connection and process events
 curl -s --max-time "$TIMEOUT_SECONDS" -X POST "$SSE_ENDPOINT" \
@@ -85,6 +88,34 @@ curl -s --max-time "$TIMEOUT_SECONDS" -X POST "$SSE_ENDPOINT" \
 
       echo "${event_data:0:300}..." # Show first 300 chars
 
+      # Check if this event contains findings
+      if echo "$event_data" | grep -q '"findings"'; then
+        echo "Findings event detected, collecting findings..."
+        
+        # Extract findings from this event and append to global collection
+        if command -v jq >/dev/null 2>&1; then
+          echo "Using jq for findings extraction"
+          EVENT_FINDINGS_COUNT=$(echo "$event_data" | jq -r '.count // 0' 2>/dev/null || echo "0")
+          EVENT_FINDINGS=$(echo "$event_data" | jq -c '.findings[]?' 2>/dev/null || echo "")
+          
+          if [ -n "$EVENT_FINDINGS" ] && [ "$EVENT_FINDINGS" != "" ]; then
+            echo "Found $EVENT_FINDINGS_COUNT findings in this event"
+            TOTAL_FINDINGS_COUNT=$((TOTAL_FINDINGS_COUNT + EVENT_FINDINGS_COUNT))
+            
+            # Append findings to temp file (one per line)
+            echo "$EVENT_FINDINGS" >> "$TEMP_FINDINGS_FILE"
+            echo "Total findings collected so far: $TOTAL_FINDINGS_COUNT"
+          fi
+        else
+          echo "jq not available, using sed fallback for findings"
+          EVENT_FINDINGS_COUNT=$(echo "$event_data" | sed -n 's/.*"count":\s*\([0-9]*\).*/\1/p')
+          if [ -n "$EVENT_FINDINGS_COUNT" ] && [ "$EVENT_FINDINGS_COUNT" != "0" ]; then
+            TOTAL_FINDINGS_COUNT=$((TOTAL_FINDINGS_COUNT + EVENT_FINDINGS_COUNT))
+            echo "Found $EVENT_FINDINGS_COUNT findings (sed parsing)"
+          fi
+        fi
+      fi
+      
       # Check if this is the "done" event indicating completion
       if echo "$event_data" | grep -q '"status":\s*"completed"'; then
         echo "Scan completed, extracting job ID..."
@@ -100,6 +131,7 @@ curl -s --max-time "$TIMEOUT_SECONDS" -X POST "$SSE_ENDPOINT" \
         
         if [ -n "$JOB_ID" ]; then
           echo "Job completed successfully. Job ID: $JOB_ID"
+          echo "Total findings collected from SSE: $TOTAL_FINDINGS_COUNT"
           echo "$JOB_ID" > "$TEMP_SSE_FILE"
           
           # Break out of curl stream since scan is complete
@@ -128,14 +160,14 @@ CURL_EXIT_CODE=$?
 if [ $CURL_EXIT_CODE -ne 0 ]; then
   echo "Error: SSE connection failed with exit code $CURL_EXIT_CODE"
   echo "This could indicate network issues, invalid URL, or API service unavailable"
-  rm -f "$TEMP_SSE_FILE"
+  rm -f "$TEMP_SSE_FILE" "$TEMP_FINDINGS_FILE"
   exit 1
 fi
 
 # Check if we got job completion
 if [ ! -f "$TEMP_SSE_FILE" ] || [ ! -s "$TEMP_SSE_FILE" ]; then
   echo "Error: No job completion data received from SSE stream"
-  rm -f "$TEMP_SSE_FILE"
+  rm -f "$TEMP_SSE_FILE" "$TEMP_FINDINGS_FILE"
   exit 1
 fi
 
@@ -145,57 +177,29 @@ rm -f "$TEMP_SSE_FILE"
 
 if [ -z "$JOB_ID" ]; then
   echo "Error: No job ID received from completion event"
+  rm -f "$TEMP_FINDINGS_FILE"
   exit 1
 fi
 
-echo "Fetching findings for job ID: $JOB_ID"
+echo "Processing findings collected from SSE stream for job ID: $JOB_ID"
 
-# Now fetch the findings using the job ID
-FINDINGS_ENDPOINT="${API_BASE_URL%/}/results/$JOB_ID"
-echo "Fetching findings from: $FINDINGS_ENDPOINT"
+# Use findings collected from SSE events instead of separate API call
+FINDINGS_COUNT=$TOTAL_FINDINGS_COUNT
 
-FINAL_RESPONSE=$(curl -s --max-time "$TIMEOUT_SECONDS" -X GET "$FINDINGS_ENDPOINT" \
-  -H "Content-Type: application/json")
-
-# Check if curl command was successful
-if [ $? -ne 0 ]; then
-  echo "Error: Failed to fetch findings - curl command failed"
-  exit 1
-fi
-
-if [ -z "$FINAL_RESPONSE" ]; then
-  echo "Error: Empty response received from findings endpoint"
-  exit 1
-fi
-
-echo "Findings response received, processing data..."
-
-# Debug: Show part of the response for troubleshooting
-echo "API Response preview: $(echo "$FINAL_RESPONSE" | head -c 200)..."
-
-# Extract findings count for display
-if command -v jq >/dev/null 2>&1; then
-  FINDINGS_COUNT=$(echo "$FINAL_RESPONSE" | jq -r '.count // 0' 2>/dev/null || echo "0")
-else
-  FINDINGS_COUNT=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"count":\s*\([0-9]*\).*/\1/p')
-  # Fallback to 0 if no count found
-  [ -z "$FINDINGS_COUNT" ] && FINDINGS_COUNT=0
-fi
-
-echo "Processing $FINDINGS_COUNT findings..."
+echo "Processing $FINDINGS_COUNT findings collected from SSE stream..."
 
 # Now process the findings data to generate the report
-# Parse findings array to get detailed results
-echo "Parsing scan results from findings..."
+# Parse findings array from collected SSE data
+echo "Parsing scan results from collected SSE findings..."
 
-# Extract findings array
-if command -v jq >/dev/null 2>&1; then
-  echo "Using jq for JSON parsing"
-  # Handle null findings array gracefully
-  FINDINGS_DATA=$(echo "$FINAL_RESPONSE" | jq -r 'if .findings then .findings[] | @json else empty end' 2>/dev/null || echo "")
+# Read findings from temp file (if exists and has content)
+if [ -f "$TEMP_FINDINGS_FILE" ] && [ -s "$TEMP_FINDINGS_FILE" ]; then
+  echo "Using findings collected from SSE events"
+  FINDINGS_DATA=$(cat "$TEMP_FINDINGS_FILE")
+  rm -f "$TEMP_FINDINGS_FILE"
 else
-  echo "jq not available, using sed fallback"
-  FINDINGS_DATA=$(echo "$FINAL_RESPONSE" | sed -n '/"findings":\s*\[/,/]/p' | sed '1d;$d' | tr -d '\n' | sed 's/},/}\n/g')
+  echo "No findings file found, checking for empty scan result"
+  FINDINGS_DATA=""
 fi
 
 echo "FINDINGS_DATA length: ${#FINDINGS_DATA}"
@@ -748,4 +752,8 @@ if [ "$BLOCKING" == "true" ]; then
 fi
 
 echo "Security scan completed successfully. Found $ISSUE_COUNT vulnerable functions out of $TOTAL_FILES total functions ($PERCENT%)."
+
+# Clean up temporary files
+rm -f "$TEMP_SSE_FILE" "$TEMP_FINDINGS_FILE" 2>/dev/null || true
+
 exit 0
