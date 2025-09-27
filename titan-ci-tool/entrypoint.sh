@@ -405,7 +405,9 @@ EOF
   
   echo "Report saved as security_report.md"
 
-elif [ "$REPORT_FORMAT" == "pdf" ]; then
+fi
+
+if [ "$REPORT_FORMAT" == "pdf" ]; then
   # Generate comprehensive markdown report first
   cat > security_report.md << EOF
 # 🛡️ TITAN Security Scan Report
@@ -499,7 +501,9 @@ EOF
     echo "📄 Markdown report saved as security_report.md"
   fi
 
-elif [ "$REPORT_FORMAT" == "xml" ]; then
+fi
+
+if [ "$REPORT_FORMAT" == "xml" ]; then
   # Generate structured XML report
   cat > security_report.xml << EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -535,7 +539,9 @@ elif [ "$REPORT_FORMAT" == "xml" ]; then
 EOF
   echo "Report saved as security_report.xml"
 
-else
+fi
+
+if [ "$REPORT_FORMAT" != "md" ] && [ "$REPORT_FORMAT" != "pdf" ] && [ "$REPORT_FORMAT" != "xml" ]; then
   echo "Error: Unsupported report format '$REPORT_FORMAT'. Supported formats: md, pdf, xml"
   exit 1
 fi
