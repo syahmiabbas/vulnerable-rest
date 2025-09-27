@@ -287,16 +287,7 @@ console.log('✅ HTML file generated successfully');
 // Try different PDF generation methods
 let pdfGenerated = false;
 
-// Method 1: Try wkhtmltopdf (lightweight, good for production)
-try {
-  execSync(`wkhtmltopdf --page-size A4 --margin-top 15mm --margin-right 15mm --margin-bottom 15mm --margin-left 15mm "${tempHtmlFile}" "${outputPdfFile}"`, { stdio: 'pipe' });
-  console.log('✅ PDF generated using wkhtmltopdf');
-  pdfGenerated = true;
-} catch (error) {
-  console.log('⚠️  wkhtmltopdf not available, trying alternative methods...');
-}
-
-// Method 2: Try Chrome/Chromium headless (good quality, but requires Chrome)
+// Method 1: Try Chrome/Chromium headless (good quality, but requires Chrome)
 if (!pdfGenerated) {
   const chromeCommands = [
     'google-chrome',
@@ -319,12 +310,12 @@ if (!pdfGenerated) {
   }
 }
 
-// Method 3: Keep HTML as fallback
+// Method 2: Keep HTML as fallback
 if (!pdfGenerated) {
   const htmlOutputFile = outputPdfFile.replace('.pdf', '.html');
   fs.copyFileSync(tempHtmlFile, htmlOutputFile);
   console.log(`⚠️  PDF generation failed, but HTML report saved as: ${htmlOutputFile}`);
-  console.log('To generate PDF manually, install wkhtmltopdf or Chrome/Chromium');
+  console.log('To generate PDF manually, use Chrome/Chromium');
 }
 
 // Clean up temp file

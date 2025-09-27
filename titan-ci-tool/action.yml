@@ -56,22 +56,7 @@ runs:
           node_version=$(node --version)
           echo "Node.js version: $node_version"
         else
-          # Try to install wkhtmltopdf as a lightweight alternative
-          echo "Node.js not available, trying to install wkhtmltopdf as lightweight alternative..."
-          
-          # Check OS and install accordingly
-          if command -v apt-get >/dev/null 2>&1; then
-            # Ubuntu/Debian
-            sudo apt-get update -qq >/dev/null 2>&1
-            sudo apt-get install -y -qq wkhtmltopdf >/dev/null 2>&1 && echo "wkhtmltopdf installed successfully" || echo "Failed to install wkhtmltopdf, will fall back to HTML output"
-          elif command -v yum >/dev/null 2>&1; then
-            # RHEL/CentOS
-            sudo yum install -y -q wkhtmltopdf >/dev/null 2>&1 && echo "wkhtmltopdf installed successfully" || echo "Failed to install wkhtmltopdf, will fall back to HTML output"
-          elif command -v apk >/dev/null 2>&1; then
-            # Alpine
-            sudo apk add --no-cache wkhtmltopdf >/dev/null 2>&1 && echo "wkhtmltopdf installed successfully" || echo "Failed to install wkhtmltopdf, will fall back to HTML output"
-          else
-            echo "Unknown package manager, checking if Chrome/Chromium is available..."
+            echo "Checking if Chrome/Chromium is available..."
             if command -v google-chrome >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
               echo "Chrome/Chromium found, will use for PDF generation"
             else
