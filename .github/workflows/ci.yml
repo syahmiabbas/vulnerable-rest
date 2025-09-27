@@ -53,7 +53,7 @@ jobs:
         api_base_url: ${{ secrets.TITAN_API_BASE_URL }}
         report_format: 'pdf'
         timeout_seconds: 300
-        exclude_files: 'node_modules/*,dist/*,.git/*,*.log'
+        exclude_files: 'node_modules/*,dist/*,.git/*,*.log, titan-ci-tool/*'
         blocking: true
         block_percentage: 50
 

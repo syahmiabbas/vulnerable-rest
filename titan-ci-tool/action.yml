@@ -26,16 +26,11 @@ inputs:
     required: false
     default: '50'
 
-outputs:
-  groupId:
-    description: 'The group ID for the initiated scan job'
-    value: ${{ steps.initiate.outputs.groupId }}
-
 runs:
   using: 'composite'
   steps:
-    - name: Initiate security scan
-      id: initiate
+    - name: Run security scan with SSE
+      id: scan
       shell: bash
       working-directory: ${{ github.action_path }}
       run: |
@@ -84,19 +79,4 @@ runs:
             fi
           fi
         fi
-      
-    - name: Check scan progress
-      shell: bash
-      working-directory: ${{ github.action_path }}
-      run: |
-        chmod +x ./check_progress.sh
-        ./check_progress.sh
-      env:
-        API_BASE_URL: ${{ inputs.api_base_url }}
-        GROUP_ID: ${{ steps.initiate.outputs.groupId }}
-        REPORT_FORMAT: ${{ inputs.report_format }}
-        TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
-        EXCLUDE_FILES: ${{ inputs.exclude_files }}
-        BLOCKING: ${{ inputs.blocking }}
-        BLOCK_PERCENTAGE: ${{ inputs.block_percentage }}
       
