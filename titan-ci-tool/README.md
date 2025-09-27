@@ -71,6 +71,7 @@ Replace `<your-org>/<your-repo>` with your actual GitHub organization and reposi
 ## Output
 - The scan results are saved in the specified format (`security_report.md`, `security_report.pdf`, or `security_report.xml`).
 - **Enhanced Formatting**: All formats include risk assessment, detailed findings, and actionable recommendations
+- **Auto-Sanitization**: Markdown reports are automatically cleaned for proper code block formatting and line breaks
 - **Markdown**: Clean formatting with emoji icons, tables, and sections
 - **PDF**: Professional layout with table of contents, executive summary, and styling (requires pandoc)
 - **XML**: Structured format for tool integration and automated processing
@@ -82,6 +83,7 @@ Replace `<your-org>/<your-repo>` with your actual GitHub organization and reposi
 - Sends repository URL in the request body as `{"content": "github_url"}`
 - Processes findings data directly from SSE events
 - **PDF generation** requires `wkhtmltopdf` or Node.js for optimal formatting
+- **Markdown sanitization** automatically fixes code block formatting, line breaks, and content issues
 - **Report formats** include professional styling and detailed vulnerability analysis
 - **XML output** provides structured data for integration with security tools and CI/CD pipelines
 
@@ -92,6 +94,8 @@ Replace `<your-org>/<your-repo>` with your actual GitHub organization and reposi
 - 📊 Summary table with scan metrics
 - 📁 Detailed findings section
 - 🔍 Configuration overview
+- ✨ Auto-sanitized code blocks and line breaks
+- 🧹 Normalized whitespace and formatting
 - Clean, readable formatting for GitHub/GitLab
 
 ### PDF Format (pdf) 
