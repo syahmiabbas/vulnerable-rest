@@ -70,99 +70,112 @@ TOTAL_FINDINGS_COUNT=0
 TEMP_SSE_FILE="/tmp/sse_output_$$"
 TEMP_FINDINGS_FILE="/tmp/findings_$$"
 
-# Start SSE connection and process events
+# Create temporary file to store raw SSE output
+TEMP_RAW_SSE="/tmp/raw_sse_$$"
+
+# Start SSE connection and save to temp file
+echo "Starting SSE connection and collecting events..."
 curl -s --max-time "$TIMEOUT_SECONDS" -X POST "$SSE_ENDPOINT" \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
   --data "{\"content\": \"$REPO_URL\"}" \
-  -N | while IFS= read -r line; do
-    
-    # Process SSE event lines
-    if [[ "$line" =~ ^data:\ (.*)$ ]]; then
-      event_data="${BASH_REMATCH[1]}"
-      
-      # Skip empty data lines
-      if [ -z "$event_data" ] || [ "$event_data" = " " ]; then
-        continue
-      fi
-
-      echo "${event_data:0:300}..." # Show first 300 chars
-
-      # Check if this event contains findings
-      if echo "$event_data" | grep -q '"findings"'; then
-        echo "Findings event detected, collecting findings..."
-        
-        # Extract findings from this event and append to global collection
-        if command -v jq >/dev/null 2>&1; then
-          echo "Using jq for findings extraction"
-          EVENT_FINDINGS_COUNT=$(echo "$event_data" | jq -r '.count // 0' 2>/dev/null || echo "0")
-          EVENT_FINDINGS=$(echo "$event_data" | jq -c '.findings[]?' 2>/dev/null || echo "")
-          
-          if [ -n "$EVENT_FINDINGS" ] && [ "$EVENT_FINDINGS" != "" ]; then
-            echo "Found $EVENT_FINDINGS_COUNT findings in this event"
-            TOTAL_FINDINGS_COUNT=$((TOTAL_FINDINGS_COUNT + EVENT_FINDINGS_COUNT))
-            
-            # Append findings to temp file (one per line)
-            echo "$EVENT_FINDINGS" >> "$TEMP_FINDINGS_FILE"
-            echo "Total findings collected so far: $TOTAL_FINDINGS_COUNT"
-          fi
-        else
-          echo "jq not available, using sed fallback for findings"
-          EVENT_FINDINGS_COUNT=$(echo "$event_data" | sed -n 's/.*"count":\s*\([0-9]*\).*/\1/p')
-          if [ -n "$EVENT_FINDINGS_COUNT" ] && [ "$EVENT_FINDINGS_COUNT" != "0" ]; then
-            TOTAL_FINDINGS_COUNT=$((TOTAL_FINDINGS_COUNT + EVENT_FINDINGS_COUNT))
-            echo "Found $EVENT_FINDINGS_COUNT findings (sed parsing)"
-          fi
-        fi
-      fi
-      
-      # Check if this is the "done" event indicating completion
-      if echo "$event_data" | grep -q '"status":\s*"completed"'; then
-        echo "Scan completed, extracting job ID..."
-        
-        # Extract job ID from the done event
-        if command -v jq >/dev/null 2>&1; then
-          echo "Using jq for JSON parsing"
-          JOB_ID=$(echo "$event_data" | jq -r '.job_id // ""')
-        else
-          echo "jq not available, using sed fallback"
-          JOB_ID=$(echo "$event_data" | sed -n 's/.*"job_id":\s*"\([^"]*\)".*/\1/p')
-        fi
-        
-        if [ -n "$JOB_ID" ]; then
-          echo "Job completed successfully. Job ID: $JOB_ID"
-          echo "Total findings collected from SSE: $TOTAL_FINDINGS_COUNT"
-          echo "$JOB_ID" > "$TEMP_SSE_FILE"
-          
-          # Break out of curl stream since scan is complete
-          break
-        else
-          echo "Warning: Could not extract job ID from completion event"
-        fi
-      else
-        # Display progress messages from other events
-        if echo "$event_data" | grep -q '"message"'; then
-          if command -v jq >/dev/null 2>&1; then
-            MESSAGE=$(echo "$event_data" | jq -r '.message // ""')
-          else
-            MESSAGE=$(echo "$event_data" | sed -n 's/.*"message":\s*"\([^"]*\)".*/\1/p')
-          fi
-          if [ -n "$MESSAGE" ]; then
-            echo "Progress: $MESSAGE"
-          fi
-        fi
-      fi
-    fi
-done
+  -N > "$TEMP_RAW_SSE"
 
 # Check if curl command was successful
 CURL_EXIT_CODE=$?
 if [ $CURL_EXIT_CODE -ne 0 ]; then
   echo "Error: SSE connection failed with exit code $CURL_EXIT_CODE"
   echo "This could indicate network issues, invalid URL, or API service unavailable"
-  rm -f "$TEMP_SSE_FILE" "$TEMP_FINDINGS_FILE"
+  rm -f "$TEMP_SSE_FILE" "$TEMP_FINDINGS_FILE" "$TEMP_RAW_SSE"
   exit 1
 fi
+
+echo "SSE connection completed, processing collected events..."
+
+# Process SSE events from the saved file
+while IFS= read -r line; do
+  # Process SSE event lines
+  if [[ "$line" =~ ^data:\ (.*)$ ]]; then
+    event_data="${BASH_REMATCH[1]}"
+    
+    # Skip empty data lines
+    if [ -z "$event_data" ] || [ "$event_data" = " " ]; then
+      continue
+    fi
+
+    echo "Processing event: ${event_data:0:200}..." # Show first 200 chars
+
+    # Check if this event contains findings
+    if echo "$event_data" | grep -q '"findings"'; then
+      echo "📊 Findings event detected, collecting findings..."
+      
+      # Extract findings from this event and append to global collection
+      if command -v jq >/dev/null 2>&1; then
+        echo "Using jq for findings extraction"
+        EVENT_FINDINGS_COUNT=$(echo "$event_data" | jq -r '.count // 0' 2>/dev/null || echo "0")
+        EVENT_FINDINGS=$(echo "$event_data" | jq -c '.findings[]?' 2>/dev/null || echo "")
+        
+        if [ -n "$EVENT_FINDINGS" ] && [ "$EVENT_FINDINGS" != "" ]; then
+          echo "✅ Found $EVENT_FINDINGS_COUNT findings in this event"
+          TOTAL_FINDINGS_COUNT=$((TOTAL_FINDINGS_COUNT + EVENT_FINDINGS_COUNT))
+          
+          # Append findings to temp file (one per line)
+          echo "$EVENT_FINDINGS" >> "$TEMP_FINDINGS_FILE"
+          echo "📈 Total findings collected so far: $TOTAL_FINDINGS_COUNT"
+        else
+          echo "⚠️  No valid findings data in this event"
+        fi
+      else
+        echo "jq not available, using sed fallback for findings"
+        EVENT_FINDINGS_COUNT=$(echo "$event_data" | sed -n 's/.*"count":\s*\([0-9]*\).*/\1/p')
+        if [ -n "$EVENT_FINDINGS_COUNT" ] && [ "$EVENT_FINDINGS_COUNT" != "0" ]; then
+          TOTAL_FINDINGS_COUNT=$((TOTAL_FINDINGS_COUNT + EVENT_FINDINGS_COUNT))
+          echo "Found $EVENT_FINDINGS_COUNT findings (sed parsing)"
+          # For sed fallback, save the whole findings section
+          echo "$event_data" >> "$TEMP_FINDINGS_FILE"
+        fi
+      fi
+    fi
+    
+    # Check if this is the "done" event indicating completion
+    if echo "$event_data" | grep -q '"status":\s*"completed"'; then
+      echo "✅ Scan completed, extracting job ID..."
+      
+      # Extract job ID from the done event
+      if command -v jq >/dev/null 2>&1; then
+        echo "Using jq for JSON parsing"
+        JOB_ID=$(echo "$event_data" | jq -r '.job_id // ""')
+      else
+        echo "jq not available, using sed fallback"
+        JOB_ID=$(echo "$event_data" | sed -n 's/.*"job_id":\s*"\([^"]*\)".*/\1/p')
+      fi
+      
+      if [ -n "$JOB_ID" ]; then
+        echo "🎉 Job completed successfully. Job ID: $JOB_ID"
+        echo "📊 Total findings collected from SSE: $TOTAL_FINDINGS_COUNT"
+        echo "$JOB_ID" > "$TEMP_SSE_FILE"
+        break
+      else
+        echo "Warning: Could not extract job ID from completion event"
+      fi
+    else
+      # Display progress messages from other events
+      if echo "$event_data" | grep -q '"message"'; then
+        if command -v jq >/dev/null 2>&1; then
+          MESSAGE=$(echo "$event_data" | jq -r '.message // ""')
+        else
+          MESSAGE=$(echo "$event_data" | sed -n 's/.*"message":\s*"\([^"]*\)".*/\1/p')
+        fi
+        if [ -n "$MESSAGE" ]; then
+          echo "📝 Progress: $MESSAGE"
+        fi
+      fi
+    fi
+  fi
+done < "$TEMP_RAW_SSE"
+
+# Clean up raw SSE file
+rm -f "$TEMP_RAW_SSE"
 
 # Check if we got job completion
 if [ ! -f "$TEMP_SSE_FILE" ] || [ ! -s "$TEMP_SSE_FILE" ]; then
@@ -194,16 +207,23 @@ echo "Parsing scan results from collected SSE findings..."
 
 # Read findings from temp file (if exists and has content)
 if [ -f "$TEMP_FINDINGS_FILE" ] && [ -s "$TEMP_FINDINGS_FILE" ]; then
-  echo "Using findings collected from SSE events"
+  echo "✅ Using findings collected from SSE events"
+  echo "📂 Findings file size: $(wc -l < "$TEMP_FINDINGS_FILE") lines"
   FINDINGS_DATA=$(cat "$TEMP_FINDINGS_FILE")
   rm -f "$TEMP_FINDINGS_FILE"
+  echo "📊 FINDINGS_DATA length: ${#FINDINGS_DATA}"
+  echo "📄 FINDINGS_DATA preview: $(echo "$FINDINGS_DATA" | head -c 300)"
 else
-  echo "No findings file found, checking for empty scan result"
+  echo "❌ No findings file found or file is empty"
+  if [ -f "$TEMP_FINDINGS_FILE" ]; then
+    echo "📂 File exists but is empty (size: $(stat -c%s "$TEMP_FINDINGS_FILE" 2>/dev/null || echo "unknown"))"
+    rm -f "$TEMP_FINDINGS_FILE"
+  else
+    echo "📂 File does not exist at: $TEMP_FINDINGS_FILE"
+  fi
+  echo "🔍 Checking for empty scan result..."
   FINDINGS_DATA=""
 fi
-
-echo "FINDINGS_DATA length: ${#FINDINGS_DATA}"
-echo "FINDINGS_DATA preview: $(echo "$FINDINGS_DATA" | head -c 200)"
 
 ISSUE_COUNT=0
 TOTAL_FILES=0
@@ -444,257 +464,18 @@ EOF
   PDF_GENERATOR="$SCRIPT_DIR/generate-pdf.js"
   
   if [ -f "$PDF_GENERATOR" ]; then
-    echo "Converting report to PDF using lightweight converter..."
+    echo "Converting report to PDF using Node.js converter..."
     if command -v node >/dev/null 2>&1; then
-      node "$PDF_GENERATOR" security_report.md security_report.pdf
-    else
-      echo "Node.js not available, trying alternative lightweight converters..."
-      
-      # Try wkhtmltopdf (lightweight alternative)
-      if command -v wkhtmltopdf >/dev/null 2>&1; then
-        echo "Using wkhtmltopdf for PDF conversion..."
-        # First create a proper HTML version for wkhtmltopdf with TailwindCSS
-        cat > security_report.html << 'HTMLEOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>TITAN Security Scan Report</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'titan-blue': '#2c5aa0',
-                        'titan-dark': '#1e3a8a',
-                        'danger': '#ef4444',
-                        'success': '#10b981',
-                        'warning': '#f59e0b',
-                    }
-                }
-            }
-        }
-    </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        .gradient-header {
-            background: linear-gradient(135deg, #1e3a8a 0%, #2c5aa0 50%, #3b82f6 100%);
-        }
-        .vulnerability-card {
-            background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
-            border-left: 6px solid #ef4444;
-        }
-        .success-card {
-            background: linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%);
-            border-left: 6px solid #10b981;
-        }
-        .warning-card {
-            background: linear-gradient(135deg, #fffbeb 0%, #fed7aa 100%);
-            border-left: 6px solid #f59e0b;
-        }
-        .code-block {
-            background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
-        }
-        @media print {
-            .print\:shadow-none { box-shadow: none !important; }
-            .print\:bg-white { background-color: white !important; }
-        }
-    </style>
-</head>
-<body class="bg-gray-50 font-sans leading-relaxed">
-    <div class="max-w-5xl mx-auto p-8 bg-white shadow-lg rounded-lg print:shadow-none print:bg-white">
-HTMLEOF
-
-        # Add the main content using proper HTML structure
-        cat >> security_report.html << HTMLEOF
-        <h1 class="text-4xl font-bold text-white p-6 mb-8 rounded-lg gradient-header shadow-lg">🛡️ TITAN Security Scan Report</h1>
-        
-        <div class="my-8"><hr class="border-0 h-px bg-gradient-to-r from-titan-blue to-gray-300"></div>
-        
-        <h2 class="text-3xl font-semibold text-titan-blue mt-12 mb-6 pb-3 border-b-2 border-titan-blue">📊 Scan Summary</h2>
-        
-        <div class="overflow-x-auto my-6">
-            <table class="w-full bg-white rounded-lg shadow-lg overflow-hidden">
-                <tr class="bg-titan-blue text-white">
-                    <td class="px-4 py-3 font-semibold">Metric</td>
-                    <td class="px-4 py-3 font-semibold">Value</td>
-                </tr>
-                <tr class="hover:bg-blue-50 transition-colors duration-200">
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Scan Date</span></td>
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$(date '+%Y-%m-%d %H:%M:%S')</td>
-                </tr>
-                <tr class="hover:bg-blue-50 transition-colors duration-200">
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">API Endpoint</span></td>
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$API_BASE_URL</td>
-                </tr>
-                <tr class="hover:bg-blue-50 transition-colors duration-200">
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Job ID</span></td>
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$JOB_ID</td>
-                </tr>
-                <tr class="hover:bg-blue-50 transition-colors duration-200">
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Total Functions Processed</span></td>
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$TOTAL_FILES</td>
-                </tr>
-                <tr class="hover:bg-blue-50 transition-colors duration-200">
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Vulnerable Functions</span></td>
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$ISSUE_COUNT</td>
-                </tr>
-                <tr class="hover:bg-blue-50 transition-colors duration-200">
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Clean Functions</span></td>
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$((TOTAL_FILES - ISSUE_COUNT))</td>
-                </tr>
-                <tr class="hover:bg-blue-50 transition-colors duration-200">
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200"><span class="font-semibold text-titan-dark">Vulnerability Rate</span></td>
-                    <td class="px-4 py-3 text-gray-700 border-b border-gray-200">$PERCENT%</td>
-                </tr>
-            </table>
-        </div>
-        
-        <div class="my-8"><hr class="border-0 h-px bg-gradient-to-r from-titan-blue to-gray-300"></div>
-        
-        <h2 class="text-3xl font-semibold text-titan-blue mt-12 mb-6 pb-3 border-b-2 border-titan-blue">📁 Detailed Results</h2>
-HTMLEOF
-
-        # Now add the detailed results with proper parsing
-        # Use printf to properly handle the cleaned markdown
-        printf '%s\n' "$RESULTS_DETAILS" | while IFS= read -r line; do
-          if [[ "$line" =~ ^###\ 🚨 ]]; then
-            # Start vulnerability card
-            title="${line#*🚨 }"
-            cat >> security_report.html << 'CARDEOF'
-        <div class="vulnerability-card rounded-lg p-6 mb-6 shadow-md">
-            <h3 class="text-xl font-semibold text-danger mb-4 flex items-center">
-                <span class="text-2xl mr-2">🚨</span> 
-CARDEOF
-            printf '%s\n' "$title" >> security_report.html
-            cat >> security_report.html << 'CARDEOF'
-            </h3>
-            <div class="space-y-3">
-CARDEOF
-          elif [[ "$line" =~ ^###\ ✅ ]]; then
-            # Start success card
-            title="${line#*✅ }"
-            cat >> security_report.html << 'CARDEOF'
-        <div class="success-card rounded-lg p-6 mb-6 shadow-md">
-            <h3 class="text-xl font-semibold text-success mb-4 flex items-center">
-                <span class="text-2xl mr-2">✅</span> 
-CARDEOF
-            printf '%s\n' "$title" >> security_report.html
-            cat >> security_report.html << 'CARDEOF'
-            </h3>
-            <div class="space-y-3">
-CARDEOF
-          elif [[ "$line" =~ ^###\ ❌ ]]; then
-            # Start warning card
-            title="${line#*❌ }"
-            cat >> security_report.html << 'CARDEOF'
-        <div class="warning-card rounded-lg p-6 mb-6 shadow-md">
-            <h3 class="text-xl font-semibold text-warning mb-4 flex items-center">
-                <span class="text-2xl mr-2">❌</span> 
-CARDEOF
-            printf '%s\n' "$title" >> security_report.html
-            cat >> security_report.html << 'CARDEOF'
-            </h3>
-            <div class="space-y-3">
-CARDEOF
-          elif [[ "$line" =~ ^-\ \*\*.*\*\*:.*$ ]]; then
-            # Property line - extract property and value properly
-            property=$(echo "$line" | sed 's/^- \*\*\([^*]*\)\*\*: .*/\1/')
-            value=$(echo "$line" | sed 's/^- \*\*[^*]*\*\*: \(.*\)/\1/')
-            
-            # Handle code snippets in values
-            if [[ "$value" =~ \`.*\` ]]; then
-              value=$(echo "$value" | sed 's/`\([^`]*\)`/<code class="bg-gray-100 text-danger px-2 py-1 rounded text-sm font-mono">\1<\/code>/g')
-            fi
-            
-            # Escape HTML characters
-            value=$(printf '%s\n' "$value" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
-            property=$(printf '%s\n' "$property" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
-            
-            cat >> security_report.html << PROPEOF
-                <div class="flex items-start mb-3">
-                    <span class="font-semibold text-titan-dark min-w-0 mr-2">$property:</span>
-                    <span class="text-gray-700 flex-1">$value</span>
-                </div>
-PROPEOF
-          elif [[ "$line" =~ ^\`\`\`$ ]]; then
-            # Start or end code block
-            if [[ "$in_code_block" == "true" ]]; then
-              cat >> security_report.html << 'CODEEOF'
-                    </pre>
-                </div>
-CODEEOF
-              in_code_block="false"
-            else
-              cat >> security_report.html << 'CODEEOF'
-                <div class="code-block rounded-lg p-4 my-4 overflow-x-auto shadow-inner">
-                    <pre class="text-green-300 text-sm font-mono whitespace-pre-wrap">
-CODEEOF
-              in_code_block="true"
-            fi
-          elif [[ "$in_code_block" == "true" ]]; then
-            # Code content - escape HTML and preserve formatting
-            escaped_line=$(printf '%s\n' "$line" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
-            printf '%s\n' "$escaped_line" >> security_report.html
-          elif [[ "$line" == "" ]]; then
-            # Empty line - close current card if we're in one
-            if [[ "$prev_line" =~ ^- ]] || [[ "$prev_line" =~ ^\`\`\`$ ]]; then
-              cat >> security_report.html << 'CLOSEEOF'
-            </div>
-        </div>
-
-CLOSEEOF
-            fi
-          fi
-          prev_line="$line"
-        done
-        
-        # Close any remaining open card
-        cat >> security_report.html << 'FINALEOF'
-            </div>
-        </div>
-FINALEOF
-
-        # Add configuration section
-        cat >> security_report.html << HTMLEOF
-        
-        <div class="my-8"><hr class="border-0 h-px bg-gradient-to-r from-titan-blue to-gray-300"></div>
-        
-        <h2 class="text-3xl font-semibold text-titan-blue mt-12 mb-6 pb-3 border-b-2 border-titan-blue">🔍 Scan Configuration</h2>
-        
-        <div class="bg-gray-50 rounded-lg p-6">
-            <ul class="space-y-2">
-                <li class="flex"><span class="font-semibold text-titan-dark mr-2">Excluded Files:</span><span class="text-gray-700">${EXCLUDE_FILES:-"None"}</span></li>
-                <li class="flex"><span class="font-semibold text-titan-dark mr-2">Blocking Mode:</span><span class="text-gray-700">$BLOCKING</span></li>
-                <li class="flex"><span class="font-semibold text-titan-dark mr-2">Block Percentage Threshold:</span><span class="text-gray-700">$BLOCK_PERCENTAGE%</span></li>
-                <li class="flex"><span class="font-semibold text-titan-dark mr-2">Timeout:</span><span class="text-gray-700">$TIMEOUT_SECONDS seconds</span></li>
-            </ul>
-        </div>
-        
-        <div class="my-8"><hr class="border-0 h-px bg-gradient-to-r from-titan-blue to-gray-300"></div>
-        
-        <div class="text-center text-gray-500 italic mt-8">
-            <em>Report generated by TITAN Security Scanner</em>
-        </div>
-        
-    </div>
-</body>
-</html>
-HTMLEOF
-        wkhtmltopdf --page-size A4 --margin-top 15mm --margin-right 15mm --margin-bottom 15mm --margin-left 15mm security_report.html security_report.pdf 2>/dev/null && {
-          echo "PDF report saved as security_report.pdf"
-          rm -f security_report.html
-        } || {
-          echo "wkhtmltopdf conversion failed, keeping HTML and markdown versions"
-          echo "HTML report saved as security_report.html"
-          echo "Markdown report saved as security_report.md"
-        }
+      if node "$PDF_GENERATOR" security_report.md security_report.pdf; then
+        echo "PDF report saved as security_report.pdf"
       else
-        echo "No PDF converters available. Saving as markdown only."
+        echo "PDF generation failed, keeping markdown report"
         echo "Markdown report saved as security_report.md"
-        echo "To generate PDF: install wkhtmltopdf or Node.js, then run the conversion manually"
       fi
+    else
+      echo "Node.js not available. Saving as markdown only."
+      echo "Markdown report saved as security_report.md"
+      echo "To generate PDF: install Node.js, then run: node generate-pdf.js security_report.md security_report.pdf"
     fi
   else
     echo "PDF generator script not found, saving as markdown only"
