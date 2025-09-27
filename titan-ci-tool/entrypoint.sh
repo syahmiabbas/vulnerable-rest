@@ -170,11 +170,16 @@ fi
 
 echo "Findings response received, processing data..."
 
+# Debug: Show part of the response for troubleshooting
+echo "API Response preview: $(echo "$FINAL_RESPONSE" | head -c 200)..."
+
 # Extract findings count for display
 if command -v jq >/dev/null 2>&1; then
-  FINDINGS_COUNT=$(echo "$FINAL_RESPONSE" | jq -r '.count // 0')
+  FINDINGS_COUNT=$(echo "$FINAL_RESPONSE" | jq -r '.count // 0' 2>/dev/null || echo "0")
 else
   FINDINGS_COUNT=$(echo "$FINAL_RESPONSE" | sed -n 's/.*"count":\s*\([0-9]*\).*/\1/p')
+  # Fallback to 0 if no count found
+  [ -z "$FINDINGS_COUNT" ] && FINDINGS_COUNT=0
 fi
 
 echo "Processing $FINDINGS_COUNT findings..."
@@ -186,7 +191,8 @@ echo "Parsing scan results from findings..."
 # Extract findings array
 if command -v jq >/dev/null 2>&1; then
   echo "Using jq for JSON parsing"
-  FINDINGS_DATA=$(echo "$FINAL_RESPONSE" | jq -r '.findings[] | @json')
+  # Handle null findings array gracefully
+  FINDINGS_DATA=$(echo "$FINAL_RESPONSE" | jq -r 'if .findings then .findings[] | @json else empty end' 2>/dev/null || echo "")
 else
   echo "jq not available, using sed fallback"
   FINDINGS_DATA=$(echo "$FINAL_RESPONSE" | sed -n '/"findings":\s*\[/,/]/p' | sed '1d;$d' | tr -d '\n' | sed 's/},/}\n/g')
@@ -202,7 +208,8 @@ RESULTS_DETAILS_XML=""
 VULNERABLE_RESULTS=""
 CLEAN_RESULTS=""
 
-# Process each finding
+# Process each finding (only if we have findings)
+if [ -n "$FINDINGS_DATA" ] && [ "$FINDINGS_COUNT" != "0" ]; then
 while IFS= read -r finding; do
   if [ -z "$finding" ]; then
     continue
@@ -293,6 +300,7 @@ while IFS= read -r finding; do
     RESULTS_DETAILS_XML+="<file><findingId>$FINDING_ID</findingId><path>$FILE_PATH</path><function>$FUNCTION_NAME</function><lines>$START_LINE-$END_LINE</lines><status>clean</status><score>$SCORE</score><prediction>$PREDICTION</prediction><analysis><![CDATA[$MESSAGE]]></analysis></file>"
   fi
 done < <(echo "$FINDINGS_DATA")
+fi
 
 # Generate report based on format
 echo "Generating security report in $REPORT_FORMAT format..."
@@ -303,18 +311,21 @@ if [ $TOTAL_FILES -gt 0 ]; then
 fi
 
 # Combine results with vulnerabilities first, then clean functions
-RESULTS_DETAILS=""
-if [ -n "$VULNERABLE_RESULTS" ]; then
-  RESULTS_DETAILS+="## 🚨 Vulnerable Functions"$'\n'$'\n'
-  RESULTS_DETAILS+="$VULNERABLE_RESULTS"
-fi
-
-if [ -n "$CLEAN_RESULTS" ]; then
+# Only update RESULTS_DETAILS if we processed findings (otherwise it was set above for clean scans)
+if [ -n "$FINDINGS_DATA" ] && [ "$FINDINGS_COUNT" != "0" ]; then
+  RESULTS_DETAILS=""
   if [ -n "$VULNERABLE_RESULTS" ]; then
-    RESULTS_DETAILS+=$'\n'"---"$'\n'$'\n'
+    RESULTS_DETAILS+="## 🚨 Vulnerable Functions"$'\n'$'\n'
+    RESULTS_DETAILS+="$VULNERABLE_RESULTS"
   fi
-  RESULTS_DETAILS+="## ✅ Clean Functions"$'\n'$'\n'
-  RESULTS_DETAILS+="$CLEAN_RESULTS"
+
+  if [ -n "$CLEAN_RESULTS" ]; then
+    if [ -n "$VULNERABLE_RESULTS" ]; then
+      RESULTS_DETAILS+=$'\n'"---"$'\n'$'\n'
+    fi
+    RESULTS_DETAILS+="## ✅ Clean Functions"$'\n'$'\n'
+    RESULTS_DETAILS+="$CLEAN_RESULTS"
+  fi
 fi
 
 if [ "$REPORT_FORMAT" == "md" ]; then
