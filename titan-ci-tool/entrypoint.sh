@@ -107,7 +107,7 @@ while IFS= read -r line; do
 
     # Check if this event contains findings
     if echo "$event_data" | grep -q '"findings"'; then
-      echo "📊 Findings event detected, collecting findings..."
+      echo "[DATA] Findings event detected, collecting findings..."
       
       # Extract findings from this event and append to global collection
       if command -v jq >/dev/null 2>&1; then
@@ -116,14 +116,14 @@ while IFS= read -r line; do
         EVENT_FINDINGS=$(echo "$event_data" | jq -c '.findings[]?' 2>/dev/null || echo "")
         
         if [ -n "$EVENT_FINDINGS" ] && [ "$EVENT_FINDINGS" != "" ]; then
-          echo "✅ Found $EVENT_FINDINGS_COUNT findings in this event"
+          echo "echo "[SUCCESS] Found $EVENT_FINDINGS_COUNT findings in this event""
           TOTAL_FINDINGS_COUNT=$((TOTAL_FINDINGS_COUNT + EVENT_FINDINGS_COUNT))
           
           # Append findings to temp file (one per line)
           echo "$EVENT_FINDINGS" >> "$TEMP_FINDINGS_FILE"
           echo "📈 Total findings collected so far: $TOTAL_FINDINGS_COUNT"
         else
-          echo "⚠️  No valid findings data in this event"
+          echo "echo "[WARNING] No valid findings data in this event""
         fi
       else
         echo "jq not available, using sed fallback for findings"
@@ -139,7 +139,7 @@ while IFS= read -r line; do
     
     # Check if this is the "done" event indicating completion
     if echo "$event_data" | grep -q '"status":\s*"completed"'; then
-      echo "✅ Scan completed, extracting job ID..."
+      echo "[SUCCESS] Scan completed, extracting job ID..."
       
       # Extract job ID from the done event
       if command -v jq >/dev/null 2>&1; then
@@ -152,7 +152,7 @@ while IFS= read -r line; do
       
       if [ -n "$JOB_ID" ]; then
         echo "🎉 Job completed successfully. Job ID: $JOB_ID"
-        echo "📊 Total findings collected from SSE: $TOTAL_FINDINGS_COUNT"
+        echo "[DATA] Total findings collected from SSE: $TOTAL_FINDINGS_COUNT"
         echo "$JOB_ID" > "$TEMP_SSE_FILE"
         break
       else
@@ -207,21 +207,21 @@ echo "Parsing scan results from collected SSE findings..."
 
 # Read findings from temp file (if exists and has content)
 if [ -f "$TEMP_FINDINGS_FILE" ] && [ -s "$TEMP_FINDINGS_FILE" ]; then
-  echo "✅ Using findings collected from SSE events"
-  echo "📂 Findings file size: $(wc -l < "$TEMP_FINDINGS_FILE") lines"
+  echo "[SUCCESS] Using findings collected from SSE events"
+  echo "[INFO] Findings file size: $(wc -l < "$TEMP_FINDINGS_FILE") lines"
   FINDINGS_DATA=$(cat "$TEMP_FINDINGS_FILE")
   rm -f "$TEMP_FINDINGS_FILE"
-  echo "📊 FINDINGS_DATA length: ${#FINDINGS_DATA}"
-  echo "📄 FINDINGS_DATA preview: $(echo "$FINDINGS_DATA" | head -c 300)"
+  echo "[DATA] FINDINGS_DATA length: ${#FINDINGS_DATA}"
+  echo "[PREVIEW] FINDINGS_DATA preview: $(echo "$FINDINGS_DATA" | head -c 300)"
 else
-  echo "❌ No findings file found or file is empty"
+  echo "[ERROR] No findings file found or file is empty"
   if [ -f "$TEMP_FINDINGS_FILE" ]; then
-    echo "📂 File exists but is empty (size: $(stat -c%s "$TEMP_FINDINGS_FILE" 2>/dev/null || echo "unknown"))"
+    echo "[INFO] File exists but is empty (size: $(stat -c%s "$TEMP_FINDINGS_FILE" 2>/dev/null || echo "unknown"))"
     rm -f "$TEMP_FINDINGS_FILE"
   else
-    echo "📂 File does not exist at: $TEMP_FINDINGS_FILE"
+    echo "[INFO] File does not exist at: $TEMP_FINDINGS_FILE"
   fi
-  echo "🔍 Checking for empty scan result..."
+  echo "[SEARCH] Checking for empty scan result..."
   FINDINGS_DATA=""
 fi
 
@@ -405,9 +405,7 @@ EOF
   
   echo "Report saved as security_report.md"
 
-fi
-
-if [ "$REPORT_FORMAT" == "pdf" ]; then
+elif [ "$REPORT_FORMAT" == "pdf" ]; then
   # Generate comprehensive markdown report first
   cat > security_report.md << EOF
 # 🛡️ TITAN Security Scan Report
@@ -468,42 +466,40 @@ EOF
   if [ -f "$PDF_GENERATOR" ]; then
     echo "Converting report to PDF using Node.js converter..."
     if command -v node >/dev/null 2>&1; then
-      echo "⏱️  Starting PDF generation with 60-second timeout..."
+      echo "[TIMER] Starting PDF generation with 60-second timeout..."
       
       # Use timeout command to prevent hanging (available on most systems)
       if command -v timeout >/dev/null 2>&1; then
         if timeout 60 node "$PDF_GENERATOR" security_report.md security_report.pdf 2>&1; then
-          echo "✅ PDF report saved as security_report.pdf"
+          echo "[SUCCESS] PDF report saved as security_report.pdf"
         else
           PDF_EXIT_CODE=$?
-          echo "❌ PDF generation failed (exit code: $PDF_EXIT_CODE) or timed out after 60 seconds"
-          echo "📄 Markdown report saved as security_report.md"
-          echo "💡 Tip: PDF generation may fail if Chrome/Chromium is not available or accessible"
+          echo "[ERROR] PDF generation failed (exit code: $PDF_EXIT_CODE) or timed out after 60 seconds"
+          echo "[INFO] Markdown report saved as security_report.md"
+          echo "[TIP] PDF generation may fail if Chrome/Chromium is not available or accessible"
         fi
       else
         # Fallback without timeout for systems that don't have it
-        echo "⚠️  No timeout command available, trying PDF generation without timeout protection..."
+        echo "[WARNING] No timeout command available, trying PDF generation without timeout protection..."
         if node "$PDF_GENERATOR" security_report.md security_report.pdf 2>&1; then
-          echo "✅ PDF report saved as security_report.pdf"
+          echo "[SUCCESS] PDF report saved as security_report.pdf"
         else
-          echo "❌ PDF generation failed, keeping markdown report"
-          echo "📄 Markdown report saved as security_report.md"
-          echo "💡 If this hangs, PDF generation may be waiting for Chrome/Chromium"
+          echo "[ERROR] PDF generation failed, keeping markdown report"
+          echo "[INFO] Markdown report saved as security_report.md"
+          echo "[TIP] If this hangs, PDF generation may be waiting for Chrome/Chromium"
         fi
       fi
     else
-      echo "❌ Node.js not available. Saving as markdown only."
-      echo "📄 Markdown report saved as security_report.md"
-      echo "💡 To generate PDF: install Node.js, then run: node generate-pdf.js security_report.md security_report.pdf"
+      echo "[ERROR] Node.js not available. Saving as markdown only."
+      echo "[INFO] Markdown report saved as security_report.md"
+      echo "[TIP] To generate PDF: install Node.js, then run: node generate-pdf.js security_report.md security_report.pdf"
     fi
   else
-    echo "❌ PDF generator script not found, saving as markdown only"
-    echo "📄 Markdown report saved as security_report.md"
+    echo "[ERROR] PDF generator script not found, saving as markdown only"
+    echo "[INFO] Markdown report saved as security_report.md"
   fi
 
-fi
-
-if [ "$REPORT_FORMAT" == "xml" ]; then
+elif [ "$REPORT_FORMAT" == "xml" ]; then
   # Generate structured XML report
   cat > security_report.xml << EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -539,9 +535,7 @@ if [ "$REPORT_FORMAT" == "xml" ]; then
 EOF
   echo "Report saved as security_report.xml"
 
-fi
-
-if [ "$REPORT_FORMAT" != "md" ] && [ "$REPORT_FORMAT" != "pdf" ] && [ "$REPORT_FORMAT" != "xml" ]; then
+else
   echo "Error: Unsupported report format '$REPORT_FORMAT'. Supported formats: md, pdf, xml"
   exit 1
 fi
