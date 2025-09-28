@@ -56,12 +56,11 @@ runs:
           node_version=$(node --version)
           echo "Node.js version: $node_version"
         else
-            echo "Checking if Chrome/Chromium is available..."
-            if command -v google-chrome >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
-              echo "Chrome/Chromium found, will use for PDF generation"
-            else
-              echo "No PDF generation tools available, will output styled HTML instead"
-            fi
+          echo "Checking if Chrome/Chromium is available..."
+          if command -v google-chrome >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
+            echo "Chrome/Chromium found, will use for PDF generation"
+          else
+            echo "No PDF generation tools available, will output styled HTML instead"
           fi
         fi
       
