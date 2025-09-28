@@ -22,6 +22,39 @@ if (!fs.existsSync(markdownFile)) {
 // Read markdown content
 const markdownContent = fs.readFileSync(markdownFile, 'utf8');
 
+// Function to count vulnerabilities and calculate dynamic timeout
+function calculateDynamicTimeout(content) {
+  // Count vulnerability sections (### 🚨, ### ✅, ### ❌)
+  const vulnerabilityMatches = content.match(/### [🚨✅❌]/g) || [];
+  const vulnerabilityCount = vulnerabilityMatches.length;
+  
+  // Also count issues from summary if available (e.g., "Issues found: 44 / 80")
+  const summaryMatch = content.match(/Issues found: (\d+)\s*\/\s*(\d+)/);
+  let issueCount = vulnerabilityCount;
+  if (summaryMatch) {
+    issueCount = Math.max(parseInt(summaryMatch[1]), vulnerabilityCount);
+  }
+  
+  // Base timeout + additional time per vulnerability
+  // Base: 30 seconds, +2 seconds per vulnerability, minimum 30s, maximum 180s
+  const baseTimeout = 30;
+  const timeoutPerIssue = 2;
+  const calculatedTimeout = Math.min(Math.max(baseTimeout + (issueCount * timeoutPerIssue), baseTimeout), 180);
+  
+  console.log(`📊 Dynamic timeout calculation:`);
+  console.log(`   Vulnerabilities detected: ${issueCount}`);
+  console.log(`   Chrome timeout: ${calculatedTimeout} seconds`);
+  console.log(`   Overall timeout: ${Math.min(calculatedTimeout + 30, 240)} seconds`);
+  
+  return {
+    chromeTimeout: calculatedTimeout * 1000, // Convert to milliseconds
+    overallTimeout: Math.min(calculatedTimeout + 30, 240) // Overall timeout with buffer
+  };
+}
+
+// Calculate dynamic timeouts based on content
+const timeouts = calculateDynamicTimeout(markdownContent);
+
 // Function to clean corrupted analysis content
 function sanitizeAnalysisContent(content) {
   return content
@@ -411,7 +444,7 @@ if (!pdfGenerated) {
       
       execSync(chromeCommand, { 
         stdio: 'ignore',  // Changed from 'pipe' to 'ignore' to prevent hanging
-        timeout: 30000    // 30 second timeout
+        timeout: timeouts.chromeTimeout    // Dynamic timeout based on vulnerability count
       });
       
       // Check if PDF was actually created
@@ -454,5 +487,13 @@ console.log('📊 PDF Generation Summary:');
 console.log(`   Status: ${pdfGenerated ? 'SUCCESS' : 'FAILED'}`);
 console.log(`   Input:  ${markdownFile}`);
 console.log(`   Output: ${pdfGenerated ? outputPdfFile : outputPdfFile.replace('.pdf', '.html')}`);
+console.log(`   Timeout used: ${timeouts.chromeTimeout / 1000}s (dynamic)`);
+
+// Export timeout information for parent script
+if (process.env.NODE_ENV !== 'test') {
+  // Write timeout info to a temp file for entrypoint.sh to read
+  const timeoutInfoFile = path.join(path.dirname(outputPdfFile), '.pdf_timeout_info');
+  fs.writeFileSync(timeoutInfoFile, JSON.stringify(timeouts));
+}
 
 process.exit(pdfGenerated ? 0 : 1);

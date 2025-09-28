@@ -466,15 +466,44 @@ EOF
   if [ -f "$PDF_GENERATOR" ]; then
     echo "Converting report to PDF using Node.js converter..."
     if command -v node >/dev/null 2>&1; then
-      echo "[TIMER] Starting PDF generation with 60-second timeout..."
+      
+      # Calculate dynamic timeout based on number of vulnerabilities
+      VULNERABILITY_COUNT=$(grep -c "### [🚨✅❌]" security_report.md 2>/dev/null || echo "0")
+      ISSUE_COUNT_MATCH=$(grep -o "Issues found: [0-9]*" security_report.md 2>/dev/null | grep -o "[0-9]*" || echo "0")
+      
+      # Use the higher count (vulnerability sections vs summary count)
+      if [ "$ISSUE_COUNT_MATCH" -gt "$VULNERABILITY_COUNT" ]; then
+        TOTAL_ISSUES=$ISSUE_COUNT_MATCH
+      else
+        TOTAL_ISSUES=$VULNERABILITY_COUNT
+      fi
+      
+      # Calculate dynamic timeout: Base 60s + 3s per issue, min 60s, max 300s (5 minutes)
+      BASE_TIMEOUT=60
+      TIMEOUT_PER_ISSUE=3
+      CALCULATED_TIMEOUT=$((BASE_TIMEOUT + (TOTAL_ISSUES * TIMEOUT_PER_ISSUE)))
+      
+      # Apply bounds
+      if [ $CALCULATED_TIMEOUT -lt $BASE_TIMEOUT ]; then
+        DYNAMIC_TIMEOUT=$BASE_TIMEOUT
+      elif [ $CALCULATED_TIMEOUT -gt 300 ]; then
+        DYNAMIC_TIMEOUT=300
+      else
+        DYNAMIC_TIMEOUT=$CALCULATED_TIMEOUT
+      fi
+      
+      echo "[TIMER] Dynamic PDF timeout calculation:"
+      echo "  Vulnerabilities detected: $TOTAL_ISSUES"
+      echo "  Calculated timeout: ${DYNAMIC_TIMEOUT}s (${BASE_TIMEOUT}s base + ${TIMEOUT_PER_ISSUE}s × $TOTAL_ISSUES issues)"
+      echo "[TIMER] Starting PDF generation with ${DYNAMIC_TIMEOUT}-second timeout..."
       
       # Use timeout command to prevent hanging (available on most systems)
       if command -v timeout >/dev/null 2>&1; then
-        if timeout 60 node "$PDF_GENERATOR" security_report.md security_report.pdf 2>&1; then
+        if timeout $DYNAMIC_TIMEOUT node "$PDF_GENERATOR" security_report.md security_report.pdf 2>&1; then
           echo "[SUCCESS] PDF report saved as security_report.pdf"
         else
           PDF_EXIT_CODE=$?
-          echo "[ERROR] PDF generation failed (exit code: $PDF_EXIT_CODE) or timed out after 60 seconds"
+          echo "[ERROR] PDF generation failed (exit code: $PDF_EXIT_CODE) or timed out after ${DYNAMIC_TIMEOUT} seconds"
           echo "[INFO] Markdown report saved as security_report.md"
           echo "[TIP] PDF generation may fail if Chrome/Chromium is not available or accessible"
         fi
