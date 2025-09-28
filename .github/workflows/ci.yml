@@ -56,7 +56,15 @@ jobs:
         blocking: true
         block_percentage: 70
 
+    - name: Security scan summary
+      if: failure()
+      run: |
+        echo "Security scan completed but found vulnerabilities above threshold"
+        echo "Review the security report to identify and fix the issues"
+        echo "Build failed due to security policy enforcement"
+
     - name: Upload security report
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: security-report

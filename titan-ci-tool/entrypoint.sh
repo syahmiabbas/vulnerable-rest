@@ -542,14 +542,43 @@ fi
 
 echo "Issues found: $ISSUE_COUNT / $TOTAL_FILES ($PERCENT%)"
 
+# Always report completion and file generation
+echo ""
+echo "=========================================="
+echo "Security scan completed successfully!"
+echo "Report files generated:"
+if [ "$REPORT_FORMAT" == "pdf" ]; then
+  if [ -f "security_report.pdf" ]; then
+    echo "  - security_report.pdf"
+  fi
+  if [ -f "security_report.md" ]; then
+    echo "  - security_report.md"
+  fi
+elif [ "$REPORT_FORMAT" == "xml" ]; then
+  echo "  - security_report.xml"
+else
+  echo "  - security_report.md"
+fi
+echo "Total findings: $ISSUE_COUNT vulnerable functions out of $TOTAL_FILES total functions ($PERCENT%)"
+echo "=========================================="
+
+# Check blocking threshold AFTER generating reports
 if [ "$BLOCKING" == "true" ]; then
   if [ $PERCENT -ge $BLOCK_PERCENTAGE ]; then
-    echo "Security issues detected ($PERCENT% >= threshold $BLOCK_PERCENTAGE%). Failing the step."
+    echo ""
+    echo "[THRESHOLD EXCEEDED] Security scan found $PERCENT% vulnerable functions, which exceeds the $BLOCK_PERCENTAGE% threshold."
+    echo "[POLICY VIOLATION] This build is configured to fail when vulnerability rate >= $BLOCK_PERCENTAGE%"
+    echo "[ACTION REQUIRED] Please review and fix the security issues identified in the report."
+    echo ""
+    echo "The security report has been generated and will be available as a build artifact."
+    echo "Failing the build step as configured..."
     exit 1
+  else
+    echo ""
+    echo "[THRESHOLD OK] Vulnerability rate ($PERCENT%) is below the configured threshold ($BLOCK_PERCENTAGE%)"
+    echo "Build can proceed safely."
   fi
 fi
-
-echo "Security scan completed successfully. Found $ISSUE_COUNT vulnerable functions out of $TOTAL_FILES total functions ($PERCENT%)."
 
 # Clean up temporary files
 rm -f "$TEMP_SSE_FILE" "$TEMP_FINDINGS_FILE" 2>/dev/null || true
