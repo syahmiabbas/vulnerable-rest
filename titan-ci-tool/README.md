@@ -1,13 +1,14 @@
 # TITAN Repository Security Scan Tool
 
-This tool automates security scanning of your repository using the TITAN API with Server-Sent Events (SSE) for real-time progress updates. It connects to the TITAN chat endpoint to analyze your code and generate comprehensive security reports without requiring API tokens.
+This tool automates security scanning of your repository using the TITAN API with Server-Sent Events (SSE) for real-time progress updates. It connects to the TITAN chat endpoint to analyze your code and generate comprehensive security reports with enhanced reliability and timeout protection.
 
 ## How It Works
 - Connects to the TITAN SSE endpoint (`/chat?stream=true`) with your repository URL
-- Receives real-time progress updates via Server-Sent Events
-- Processes findings data directly from the SSE stream
-- Generates detailed security reports in multiple formats
-- Provides configurable timeout and blocking behavior
+- Receives real-time progress updates via Server-Sent Events with enhanced error handling
+- Processes findings data directly from the SSE stream with timeout protection
+- Generates detailed security reports in multiple formats with improved content parsing
+- Provides configurable security policy enforcement with report preservation
+- Always generates reports as artifacts, even when builds fail due to policy violations
 - No API tokens required for authentication
 
 ## Setup
@@ -27,7 +28,7 @@ This tool can be published as a reusable GitHub Action. To do so:
 
 ### Example Workflow Usage
 ```yaml
-name: Security Scan
+name: CI Pipeline with Security Scan
 on:
    push:
       branches: [ main ]
@@ -44,18 +45,26 @@ jobs:
          - name: Run TITAN Security Scan
             uses: <your-org>/<your-repo>/titan-ci-tool@main
             with:
-               api_base_url: 'https://your-titan-api.com'
-               report_format: 'md'
+               api_base_url: ${{ secrets.TITAN_API_BASE_URL }}
+               report_format: 'pdf'
                timeout_seconds: 300
-               exclude_files: '*.md,tests/*'
                blocking: true
-               block_percentage: 50
+               block_percentage: 70
+
+         - name: Security scan summary
+            if: failure()
+            run: |
+               echo "Security scan completed but found vulnerabilities above threshold"
+               echo "Review the security report to identify and fix the issues"
+               echo "Build failed due to security policy enforcement"
 
          - name: Upload security report
+            if: always()
             uses: actions/upload-artifact@v4
             with:
                name: security-report
-               path: security_report.*
+               path: titan-ci-tool/security_report.*
+               retention-days: 30
 ```
 
 Replace `<your-org>/<your-repo>` with your actual GitHub organization and repository name.
@@ -73,19 +82,23 @@ Replace `<your-org>/<your-repo>` with your actual GitHub organization and reposi
 - **Enhanced Formatting**: All formats include risk assessment, detailed findings, and actionable recommendations
 - **Auto-Sanitization**: Markdown reports are automatically cleaned for proper code block formatting and line breaks
 - **Markdown**: Clean formatting with emoji icons, tables, and sections
-- **PDF**: Professional layout with table of contents, executive summary, and styling (requires pandoc)
+- **PDF**: Professional layout with Chrome/Chromium headless conversion and 30-second timeout protection
 - **XML**: Structured format for tool integration and automated processing
-- If blocking mode is enabled and issues exceed the threshold, the step will fail.
+- **Report Preservation**: Security reports are always generated and uploaded as artifacts, even when builds fail
+- **Policy Enforcement**: If blocking mode is enabled and issues exceed the threshold, the step will fail AFTER generating reports
+- **Enhanced Reliability**: SSE connection with 60-second timeout protection and improved error handling
 - Detailed logs show which files are scanned and any issues found.
 
 ## Customization
 - The tool connects to a single SSE endpoint: `/chat?stream=true` for real-time scan progress
 - Sends repository URL in the request body as `{"content": "github_url"}`
-- Processes findings data directly from SSE events
-- **PDF generation** requires Node.js for optimal formatting
+- Processes findings data directly from SSE events with enhanced timeout protection (60 seconds)
+- **PDF generation** uses Node.js with Chrome/Chromium headless for optimal formatting (30-second timeout)
+- **Fallback handling** provides graceful degradation when PDF tools are unavailable
 - **Markdown sanitization** automatically fixes code block formatting, line breaks, and content issues
 - **Report formats** include professional styling and detailed vulnerability analysis
 - **XML output** provides structured data for integration with security tools and CI/CD pipelines
+- **Enhanced Error Handling** with detailed logging and timeout protection for all external calls
 
 ## Report Features
 
@@ -100,11 +113,13 @@ Replace `<your-org>/<your-repo>` with your actual GitHub organization and reposi
 
 ### PDF Format (pdf) 
 - Executive summary with risk assessment
-- Layout with styled HTML conversion
+- Layout with styled HTML conversion using Chrome/Chromium headless
 - TailwindCSS styling for modern appearance
 - Color-coded vulnerability cards and risk indicators
 - Responsive design that works well in print
+- Enhanced reliability with 30-second timeout protection
 - Requires Node.js with `generate-pdf.js` for optimal rendering
+- Graceful fallback to HTML output if PDF tools unavailable
 
 ### XML Format (xml)
 - Structured data format for tool integration
@@ -119,16 +134,31 @@ Replace `<your-org>/<your-repo>` with your actual GitHub organization and reposi
 - name: Run TITAN Security Scan
   uses: <your-org>/<your-repo>/titan-ci-tool@main
   with:
-    api_base_url: 'https://your-titan-api.com'
+    api_base_url: ${{ secrets.TITAN_API_BASE_URL }}
     report_format: 'pdf'
     timeout_seconds: 600
-    exclude_files: '*.md,tests/*,docs/*'
     blocking: true
     block_percentage: 25
+
+- name: Security scan summary
+  if: failure()
+  run: |
+    echo "Security scan completed but found vulnerabilities above threshold"
+    echo "Review the security report to identify and fix the issues"
+
+- name: Upload security report
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: security-report
+    path: titan-ci-tool/security_report.*
+    retention-days: 30
 ```
 
 The configuration will:
-- Generate a professional PDF report with risk assessment
-- Set a 10-minute timeout for SSE connection
-- Exclude Markdown files, tests, and docs folders
-- Block the pipeline if 25% or more of files have issues
+- Generate a professional PDF report with risk assessment and enhanced timeout protection
+- Set a 10-minute timeout for SSE connection with automatic retry handling
+- Exclude common build artifacts and tool directories from scanning
+- **Always generate and upload security reports**, even when builds fail
+- Block the pipeline if 25% or more of files have issues (after generating reports)
+- Provide clear feedback on security policy violations with detailed messaging
