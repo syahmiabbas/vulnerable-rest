@@ -49,7 +49,32 @@ runs:
         echo "Installing md2pdf for reliable PDF generation..."
         if npm install -g md2pdf; then
           echo "✅ md2pdf installed successfully"
-          md2pdf --version 2>/dev/null || echo "md2pdf installed (version check not available)"
+          
+          # Debug npm configuration
+          echo "[DEBUG] npm global bin directory: $(npm bin -g 2>/dev/null || echo 'not found')"
+          echo "[DEBUG] npm global root directory: $(npm root -g 2>/dev/null || echo 'not found')"
+          echo "[DEBUG] Current PATH: $PATH"
+          
+          # Refresh PATH and verify installation
+          export PATH="$(npm bin -g):$PATH"
+          echo "[DEBUG] Updated PATH: $PATH"
+          
+          # Test different ways to access md2pdf
+          if command -v md2pdf >/dev/null 2>&1; then
+            echo "✅ md2pdf found in PATH"
+            md2pdf --version 2>/dev/null || echo "md2pdf command available"
+          elif command -v npx >/dev/null 2>&1; then
+            echo "✅ md2pdf accessible via npx"
+            npx md2pdf --version 2>/dev/null || echo "md2pdf available via npx"
+          else
+            echo "⚠️ md2pdf command not directly accessible, will use alternative methods"
+            
+            # Additional debug info
+            echo "[DEBUG] Checking for md2pdf in common locations:"
+            ls -la "$(npm bin -g)" 2>/dev/null | grep md2pdf || echo "  - Not found in npm bin -g"
+            ls -la "$(npm root -g)/md2pdf/bin/" 2>/dev/null || echo "  - Not found in npm root -g/md2pdf/bin/"
+            ls -la "/usr/local/bin/" 2>/dev/null | grep md2pdf || echo "  - Not found in /usr/local/bin"
+          fi
         else
           echo "❌ Failed to install md2pdf"
           exit 1
