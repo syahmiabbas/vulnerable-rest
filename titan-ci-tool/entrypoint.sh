@@ -473,7 +473,7 @@ while IFS= read -r finding; do
       TRUNCATED_MESSAGE="$MESSAGE"
     fi
     
-    VULNERABLE_RESULTS+="### 🚨 Vulnerability Found: $FILE_PATH"$'\n'
+    VULNERABLE_RESULTS+="### Vulnerability Found: $FILE_PATH"$'\n'
     VULNERABLE_RESULTS+="- **Finding ID:** \`$FINDING_ID\`"$'\n'
     VULNERABLE_RESULTS+="- **Function:** \`$FUNCTION_NAME\`"$'\n'
     VULNERABLE_RESULTS+="- **Lines:** $START_LINE-$END_LINE"$'\n'
@@ -501,7 +501,7 @@ while IFS= read -r finding; do
       TRUNCATED_MESSAGE="$MESSAGE"
     fi
     
-    CLEAN_RESULTS+="### ✅ Clean: $FILE_PATH"$'\n'
+    CLEAN_RESULTS+="### Clean: $FILE_PATH"$'\n'
     CLEAN_RESULTS+="- **Finding ID:** \`$FINDING_ID\`"$'\n'
     CLEAN_RESULTS+="- **Function:** \`$FUNCTION_NAME\`"$'\n'
     CLEAN_RESULTS+="- **Lines:** $START_LINE-$END_LINE"$'\n'
@@ -554,7 +554,7 @@ echo "[DEBUG] Final counts: ISSUE_COUNT=$ISSUE_COUNT, TOTAL_FILES=$TOTAL_FILES, 
 if [ -n "$FINDINGS_DATA" ] && [ "$FINDINGS_COUNT" != "0" ]; then
   RESULTS_DETAILS=""
   if [ -n "$VULNERABLE_RESULTS" ]; then
-    RESULTS_DETAILS+="## 🚨 Vulnerable Functions"$'\n'$'\n'
+    RESULTS_DETAILS+="## Vulnerable Functions"$'\n'$'\n'
     RESULTS_DETAILS+="$VULNERABLE_RESULTS"
   fi
 
@@ -562,7 +562,7 @@ if [ -n "$FINDINGS_DATA" ] && [ "$FINDINGS_COUNT" != "0" ]; then
     if [ -n "$VULNERABLE_RESULTS" ]; then
       RESULTS_DETAILS+=$'\n'"---"$'\n'$'\n'
     fi
-    RESULTS_DETAILS+="## ✅ Clean Functions"$'\n'$'\n'
+    RESULTS_DETAILS+="## Clean Functions"$'\n'$'\n'
     RESULTS_DETAILS+="$CLEAN_RESULTS"
   fi
 fi
@@ -623,16 +623,15 @@ EOF
 elif [ "$REPORT_FORMAT" == "pdf" ]; then
   # Generate comprehensive markdown report first
   cat > security_report.md << EOF
-# 🛡️ TITAN Security Scan Report
+# TITAN Security Scan Report
 
 ---
 
-## 📊 Scan Summary
+## Scan Summary
 
 | Metric | Value |
 |--------|-------|
 | **Scan Date** | $(date '+%Y-%m-%d %H:%M:%S') |
-| **API Endpoint** | $API_BASE_URL |
 | **Job ID** | $JOB_ID |
 | **Total Functions Processed** | $TOTAL_FILES |
 | **Vulnerable Functions** | $ISSUE_COUNT |
@@ -641,13 +640,13 @@ elif [ "$REPORT_FORMAT" == "pdf" ]; then
 
 ---
 
-## 📁 Detailed Results
+## Detailed Results
 
 $RESULTS_DETAILS
 
 ---
 
-## 🔍 Scan Configuration
+## Scan Configuration
 
 - **Excluded Files**: ${EXCLUDE_FILES:-"None"}
 - **Blocking Mode**: $BLOCKING

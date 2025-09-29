@@ -198,7 +198,7 @@ function main() {
     let sanitized = sanitizer.sanitize(content);
     
     // Apply security report specific cleaning if this looks like a security report
-    if (content.includes('TITAN Security Scan Report') || content.includes('🚨 Vulnerability Found')) {
+    if (content.includes('TITAN Security Scan Report') || content.includes('Vulnerability Found')) {
       sanitized = sanitizer.cleanSecurityReport(sanitized);
     }
     
