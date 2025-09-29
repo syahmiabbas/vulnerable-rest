@@ -207,12 +207,11 @@ curl --max-time "$TIMEOUT_SECONDS" -X POST "$SSE_ENDPOINT" \
         fi
       fi
     fi
-  done
-  
-  # Mark completion
-  touch "$TEMP_RAW_SSE.completed"
-done &
+  done &
 CURL_PID=$!
+
+# Mark completion when curl finishes
+touch "$TEMP_RAW_SSE.completed"
 
 # Wait for curl to complete
 wait $CURL_PID
