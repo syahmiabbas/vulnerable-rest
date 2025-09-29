@@ -35,36 +35,24 @@ runs:
       run: |
         echo "Setting up PDF generation tools..."
         
-        # Check if Node.js is available (preferred method)
+        # Check if Node.js is available
         if command -v node >/dev/null 2>&1; then
-          echo "✅ Node.js is available for PDF generation"
+          echo "✅ Node.js is available"
           node_version=$(node --version)
           echo "Node.js version: $node_version"
         else
           echo "❌ Node.js not found"
+          exit 1
         fi
         
-        # Install Chrome for PDF generation
-        echo "Installing Chrome for headless PDF generation..."
-        sudo apt-get update -qq
-        sudo apt-get install -y wget gnupg
-        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-        sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
-        sudo apt-get update -qq
-        sudo apt-get install -y google-chrome-stable
-        
-        # Verify Chrome installation
-        if command -v google-chrome >/dev/null 2>&1; then
-          echo "✅ Chrome installed successfully"
-          google-chrome --version
+        # Install md2pdf for PDF generation
+        echo "Installing md2pdf for reliable PDF generation..."
+        if npm install -g md2pdf; then
+          echo "✅ md2pdf installed successfully"
+          md2pdf --version 2>/dev/null || echo "md2pdf installed (version check not available)"
         else
-          echo "⚠️ Chrome installation may have failed, checking alternatives..."
-          if command -v chromium-browser >/dev/null 2>&1; then
-            echo "✅ Chromium browser available as fallback"
-            chromium-browser --version
-          else
-            echo "❌ No suitable browser found for PDF generation"
-          fi
+          echo "❌ Failed to install md2pdf"
+          exit 1
         fi
       
     - name: Run security scan with SSE

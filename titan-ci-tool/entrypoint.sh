@@ -674,97 +674,30 @@ EOF
     echo "Markdown sanitizer not available (Node.js not found), keeping original formatting"
   fi
 
-  # Convert markdown to PDF using our lightweight Node.js script
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  PDF_GENERATOR="$SCRIPT_DIR/generate-pdf.js"
+  # Convert markdown to PDF using md2pdf
+  echo "Converting report to PDF using md2pdf..."
+  echo "[DEBUG] md2pdf available: $(command -v md2pdf >/dev/null 2>&1 && echo "YES" || echo "NO")"
   
-  echo "[DEBUG] PDF_GENERATOR path: $PDF_GENERATOR"
-  echo "[DEBUG] PDF_GENERATOR exists: $([ -f "$PDF_GENERATOR" ] && echo "YES" || echo "NO")"
-  
-  if [ -f "$PDF_GENERATOR" ]; then
-    echo "Converting report to PDF using Node.js converter..."
-    echo "[DEBUG] Node.js available: $(command -v node >/dev/null 2>&1 && echo "YES" || echo "NO")"
-    if command -v node >/dev/null 2>&1; then
-      
-      # Calculate dynamic timeout based on number of vulnerabilities
-      VULNERABILITY_COUNT=$(grep -c "### [🚨✅❌]" security_report.md 2>/dev/null || echo "0")
-      # Ensure it's a valid number
-      if ! [[ "$VULNERABILITY_COUNT" =~ ^[0-9]+$ ]]; then
-        VULNERABILITY_COUNT=0
-      fi
-      ISSUE_COUNT_MATCH=$(grep -o "Issues found: [0-9]*" security_report.md 2>/dev/null | head -1 | grep -o "[0-9]*" | head -1 || echo "0")
-      # Ensure it's a valid number
-      if ! [[ "$ISSUE_COUNT_MATCH" =~ ^[0-9]+$ ]]; then
-        ISSUE_COUNT_MATCH=0
-      fi
-      
-      # Use the higher count (vulnerability sections vs summary count)
-      if [ "$ISSUE_COUNT_MATCH" -gt "$VULNERABILITY_COUNT" ]; then
-        TOTAL_ISSUES=$ISSUE_COUNT_MATCH
-      else
-        TOTAL_ISSUES=$VULNERABILITY_COUNT
-      fi
-      
-      # Calculate dynamic timeout: Base 60s + 3s per issue, min 60s, max 300s (5 minutes)
-      BASE_TIMEOUT=60
-      TIMEOUT_PER_ISSUE=3
-      CALCULATED_TIMEOUT=$((BASE_TIMEOUT + (TOTAL_ISSUES * TIMEOUT_PER_ISSUE)))
-      
-      # Apply bounds
-      if [ $CALCULATED_TIMEOUT -lt $BASE_TIMEOUT ]; then
-        DYNAMIC_TIMEOUT=$BASE_TIMEOUT
-      elif [ $CALCULATED_TIMEOUT -gt 300 ]; then
-        DYNAMIC_TIMEOUT=300
-      else
-        DYNAMIC_TIMEOUT=$CALCULATED_TIMEOUT
-      fi
-      
-      echo "[TIMER] Dynamic PDF timeout calculation:"
-      echo "  Vulnerabilities detected: $TOTAL_ISSUES"
-      echo "  Calculated timeout: ${DYNAMIC_TIMEOUT}s (${BASE_TIMEOUT}s base + ${TIMEOUT_PER_ISSUE}s × $TOTAL_ISSUES issues)"
-      echo "[TIMER] Starting PDF generation with ${DYNAMIC_TIMEOUT}-second timeout..."
-      
-      # Use timeout command to prevent hanging (available on most systems)
-      if command -v timeout >/dev/null 2>&1; then
-        echo "[DEBUG] Running PDF generation with timeout: timeout $DYNAMIC_TIMEOUT node \"$PDF_GENERATOR\" security_report.md security_report.pdf"
-        if timeout $DYNAMIC_TIMEOUT node "$PDF_GENERATOR" security_report.md security_report.pdf; then
-          echo "[SUCCESS] PDF report saved as security_report.pdf"
-          echo "[DEBUG] PDF file size: $(ls -la security_report.pdf 2>/dev/null || echo "File not found")"
-        else
-          PDF_EXIT_CODE=$?
-          echo "[ERROR] PDF generation failed (exit code: $PDF_EXIT_CODE) or timed out after ${DYNAMIC_TIMEOUT} seconds"
-          echo "[DEBUG] Checking for HTML fallback..."
-          if [ -f "security_report.html" ]; then
-            echo "[INFO] HTML report was generated as fallback: security_report.html"
-          fi
-          echo "[INFO] Markdown report saved as security_report.md"
-          echo "[TIP] PDF generation may fail if Chrome/Chromium is not available or accessible"
-        fi
-      else
-        # Fallback without timeout for systems that don't have it
-        echo "[WARNING] No timeout command available, trying PDF generation without timeout protection..."
-        echo "[DEBUG] Running PDF generation: node \"$PDF_GENERATOR\" security_report.md security_report.pdf"
-        if node "$PDF_GENERATOR" security_report.md security_report.pdf; then
-          echo "[SUCCESS] PDF report saved as security_report.pdf"
-          echo "[DEBUG] PDF file size: $(ls -la security_report.pdf 2>/dev/null || echo "File not found")"
-        else
-          echo "[ERROR] PDF generation failed, keeping markdown report"
-          echo "[DEBUG] Checking for HTML fallback..."
-          if [ -f "security_report.html" ]; then
-            echo "[INFO] HTML report was generated as fallback: security_report.html"
-          fi
-          echo "[INFO] Markdown report saved as security_report.md"
-          echo "[TIP] If this hangs, PDF generation may be waiting for Chrome/Chromium"
-        fi
+  if command -v md2pdf >/dev/null 2>&1; then
+    echo "Converting markdown to PDF with md2pdf..."
+    
+    # Simple PDF generation with md2pdf
+    echo "[INFO] Converting security_report.md to security_report.pdf..."
+    if md2pdf security_report.md --output security_report.pdf; then
+      echo "[SUCCESS] ✅ PDF report generated successfully: security_report.pdf"
+      if [ -f "security_report.pdf" ]; then
+        PDF_SIZE=$(ls -lh security_report.pdf | awk '{print $5}')
+        echo "[INFO] PDF file size: $PDF_SIZE"
       fi
     else
-      echo "[ERROR] Node.js not available. Saving as markdown only."
-      echo "[INFO] Markdown report saved as security_report.md"
-      echo "[TIP] To generate PDF: install Node.js, then run: node generate-pdf.js security_report.md security_report.pdf"
+      echo "[ERROR] ❌ PDF generation failed with md2pdf"
+      echo "[INFO] Markdown report is still available: security_report.md"
+      echo "[TIP] Check if md2pdf is properly installed"
     fi
   else
-    echo "[ERROR] PDF generator script not found, saving as markdown only"
+    echo "[ERROR] md2pdf not available. Saving as markdown only."
     echo "[INFO] Markdown report saved as security_report.md"
+    echo "[TIP] To generate PDF: install md2pdf with 'npm install -g md2pdf'"
   fi
 
 elif [ "$REPORT_FORMAT" == "xml" ]; then
