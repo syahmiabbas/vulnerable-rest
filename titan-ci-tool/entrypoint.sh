@@ -73,37 +73,201 @@ TEMP_FINDINGS_FILE="/tmp/findings_$$"
 # Create temporary file to store raw SSE output
 TEMP_RAW_SSE="/tmp/raw_sse_$$"
 
-# Start SSE connection and save to temp file
-echo "Starting SSE connection and collecting events..."
-curl -s --max-time "$TIMEOUT_SECONDS" -X POST "$SSE_ENDPOINT" \
-  -H "Content-Type: application/json" \
-  -H "Accept: text/event-stream" \
-  --data "{\"content\": \"$REPO_URL\"}" \
-  -N > "$TEMP_RAW_SSE"
+# Start SSE connection with real-time processing and activity monitoring
+echo "Starting SSE connection with real-time progress tracking..."
+echo "[SSE] Timeout: ${TIMEOUT_SECONDS}s | Endpoint: $SSE_ENDPOINT"
+
+# Use named pipes for real-time processing
+PIPE_SSE="/tmp/sse_pipe_$$"
+mkfifo "$PIPE_SSE" 2>/dev/null || PIPE_SSE="$TEMP_RAW_SSE"
+
+# Function to show activity and prevent timeouts
+show_activity() {
+  local counter=0
+  local last_activity=$(date +%s)
+  local current_time
+  local elapsed
+  
+  while [ -f "$TEMP_RAW_SSE.processing" ]; do
+    sleep 5
+    counter=$((counter + 1))
+    current_time=$(date +%s)
+    elapsed=$((current_time - last_activity))
+    
+    # Show progress every 30 seconds
+    if [ $((counter % 6)) -eq 0 ]; then
+      echo "[SSE] Connection active... (${elapsed}s elapsed, timeout in $((TIMEOUT_SECONDS - elapsed))s)"
+    fi
+    
+    # Check if we've seen activity recently
+    if [ -f "$TEMP_RAW_SSE.activity" ]; then
+      last_activity=$(date +%s)
+      rm -f "$TEMP_RAW_SSE.activity"
+    fi
+    
+    # Safety check for runaway process
+    if [ $elapsed -gt $((TIMEOUT_SECONDS + 30)) ]; then
+      echo "[WARNING] SSE connection exceeded timeout + buffer, checking status..."
+      break
+    fi
+  done
+}
+
+# Start background activity monitor
+touch "$TEMP_RAW_SSE.processing"
+show_activity &
+ACTIVITY_PID=$!
+
+# Start curl with real-time output processing
+echo "[SSE] Initiating connection..."
+(
+  curl --max-time "$TIMEOUT_SECONDS" -X POST "$SSE_ENDPOINT" \
+    -H "Content-Type: application/json" \
+    -H "Accept: text/event-stream" \
+    --data "{\"content\": \"$REPO_URL\"}" \
+    -N --no-buffer 2>/dev/null | while IFS= read -r line; do
+    
+    # Mark activity
+    touch "$TEMP_RAW_SSE.activity"
+    
+    # Save line to temp file and process immediately
+    echo "$line" >> "$TEMP_RAW_SSE"
+    
+    # Process SSE event lines in real-time
+    if [[ "$line" =~ ^data:\ (.*)$ ]]; then
+      event_data="${BASH_REMATCH[1]}"
+      
+      # Skip empty data lines
+      if [ -z "$event_data" ] || [ "$event_data" = " " ]; then
+        continue
+      fi
+
+      # Show real-time progress
+      echo "[SSE] Event received: ${event_data:0:150}..." # Show first 150 chars
+      
+      # Check for different event types and show appropriate messages
+      if echo "$event_data" | grep -q '"status"'; then
+        # Extract status message if possible
+        if command -v jq >/dev/null 2>&1; then
+          status_msg=$(echo "$event_data" | jq -r '.status // .message // empty' 2>/dev/null)
+          if [ -n "$status_msg" ]; then
+            echo "[STATUS] $status_msg"
+          fi
+        fi
+      fi
+      
+      if echo "$event_data" | grep -q '"findings"'; then
+        echo "[DATA] 🎯 Findings event detected - collecting vulnerability data..."
+        
+        # Extract and collect findings in real-time
+        if command -v jq >/dev/null 2>&1; then
+          EVENT_FINDINGS_COUNT=$(echo "$event_data" | jq -r '.count // 0' 2>/dev/null || echo "0")
+          EVENT_FINDINGS=$(echo "$event_data" | jq -c '.findings[]?' 2>/dev/null || echo "")
+          
+          if [ -n "$EVENT_FINDINGS" ] && [ "$EVENT_FINDINGS" != "" ]; then
+            echo "[SUCCESS] 📊 Found $EVENT_FINDINGS_COUNT findings in this event"
+            TOTAL_FINDINGS_COUNT=$((TOTAL_FINDINGS_COUNT + EVENT_FINDINGS_COUNT))
+            
+            # Append findings to temp file (one per line)
+            echo "$EVENT_FINDINGS" >> "$TEMP_FINDINGS_FILE"
+            echo "[TOTAL] 📈 Total findings collected so far: $TOTAL_FINDINGS_COUNT"
+          else
+            echo "[WARNING] No valid findings data in this event"
+          fi
+        else
+          echo "[FALLBACK] Using sed parsing for findings (jq not available)"
+          EVENT_FINDINGS_COUNT=$(echo "$event_data" | sed -n 's/.*"count":\s*\([0-9]*\).*/\1/p')
+          if [ -n "$EVENT_FINDINGS_COUNT" ] && [ "$EVENT_FINDINGS_COUNT" != "0" ]; then
+            TOTAL_FINDINGS_COUNT=$((TOTAL_FINDINGS_COUNT + EVENT_FINDINGS_COUNT))
+            echo "[SUCCESS] 📊 Found $EVENT_FINDINGS_COUNT findings (sed parsing)"
+            # For sed fallback, save the whole findings section
+            echo "$event_data" >> "$TEMP_FINDINGS_FILE"
+            echo "[TOTAL] 📈 Total findings collected so far: $TOTAL_FINDINGS_COUNT"
+          fi
+        fi
+      fi
+      
+      if echo "$event_data" | grep -q '"progress"'; then
+        if command -v jq >/dev/null 2>&1; then
+          progress=$(echo "$event_data" | jq -r '.progress // empty' 2>/dev/null)
+          if [ -n "$progress" ]; then
+            echo "[PROGRESS] $progress"
+          fi
+        fi
+      fi
+    fi
+  done
+  
+  # Mark completion
+  touch "$TEMP_RAW_SSE.completed"
+) &
+CURL_PID=$!
+
+# Wait for curl to complete
+wait $CURL_PID
+CURL_EXIT_CODE=$?
+
+# Clean up background processes
+rm -f "$TEMP_RAW_SSE.processing"
+if [ -n "$ACTIVITY_PID" ]; then
+  kill $ACTIVITY_PID 2>/dev/null || true
+fi
 
 # Check if curl command was successful
-CURL_EXIT_CODE=$?
 if [ $CURL_EXIT_CODE -ne 0 ]; then
-  echo "Error: SSE connection failed with exit code $CURL_EXIT_CODE"
+  echo "[ERROR] SSE connection failed with exit code $CURL_EXIT_CODE"
   echo "This could indicate network issues, invalid URL, or API service unavailable"
-  rm -f "$TEMP_SSE_FILE" "$TEMP_FINDINGS_FILE" "$TEMP_RAW_SSE"
+  rm -f "$TEMP_SSE_FILE" "$TEMP_FINDINGS_FILE" "$TEMP_RAW_SSE" "$TEMP_RAW_SSE.processing" "$TEMP_RAW_SSE.activity" "$TEMP_RAW_SSE.completed"
   exit 1
 fi
 
-echo "SSE connection completed, processing collected events..."
+echo "[SSE] Connection completed successfully! Processing final results..."
 
-# Process SSE events from the saved file
+# Final summary of collected data from real-time processing
+echo "[SUMMARY] Real-time SSE processing completed"
+echo "[SUMMARY] Total findings collected: $TOTAL_FINDINGS_COUNT"
+
+# Quick verification - count findings in temp file for validation
+if [ -f "$TEMP_FINDINGS_FILE" ]; then
+  FINDINGS_FILE_COUNT=$(wc -l < "$TEMP_FINDINGS_FILE" 2>/dev/null || echo "0")
+  echo "[VALIDATION] Findings file contains $FINDINGS_FILE_COUNT lines"
+  
+  if [ "$FINDINGS_FILE_COUNT" -eq 0 ]; then
+    echo "[WARNING] No findings were saved to file - checking if events were processed..."
+    # If no findings in file but we have raw SSE data, try to re-extract as fallback
+    if [ -f "$TEMP_RAW_SSE" ] && [ -s "$TEMP_RAW_SSE" ]; then
+      echo "[RECOVERY] Attempting to extract findings from saved SSE data..."
+      while IFS= read -r line; do
+        if [[ "$line" =~ ^data:\ (.*)$ ]]; then
+          event_data="${BASH_REMATCH[1]}"
+          if echo "$event_data" | grep -q '"findings"'; then
+            echo "[RECOVERY] Found findings event, extracting..."
+            if command -v jq >/dev/null 2>&1; then
+              echo "$event_data" | jq -c '.findings[]?' 2>/dev/null >> "$TEMP_FINDINGS_FILE"
+            else
+              echo "$event_data" >> "$TEMP_FINDINGS_FILE"
+            fi
+          fi
+        fi
+      done < "$TEMP_RAW_SSE"
+      echo "[RECOVERY] Recovery extraction completed"
+    fi
+  fi
+else
+  echo "[ERROR] Findings file was not created during processing"
+fi
+
+# Continue with any additional event processing needed (non-findings events)
+echo "[INFO] Checking for additional SSE events..."
 while IFS= read -r line; do
-  # Process SSE event lines
+  # Process remaining SSE event lines (non-findings events for completion status)
   if [[ "$line" =~ ^data:\ (.*)$ ]]; then
     event_data="${BASH_REMATCH[1]}"
     
-    # Skip empty data lines
-    if [ -z "$event_data" ] || [ "$event_data" = " " ]; then
+    # Skip empty data lines and findings (already processed)
+    if [ -z "$event_data" ] || [ "$event_data" = " " ] || echo "$event_data" | grep -q '"findings"'; then
       continue
     fi
-
-    echo "Processing event: ${event_data:0:200}..." # Show first 200 chars
 
     # Check if this event contains findings
     if echo "$event_data" | grep -q '"findings"'; then
