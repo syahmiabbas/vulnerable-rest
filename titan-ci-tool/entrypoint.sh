@@ -376,7 +376,7 @@ if [ -f "$TEMP_FINDINGS_FILE" ] && [ -s "$TEMP_FINDINGS_FILE" ]; then
   FINDINGS_DATA=$(cat "$TEMP_FINDINGS_FILE")
   rm -f "$TEMP_FINDINGS_FILE"
   echo "[DATA] FINDINGS_DATA length: ${#FINDINGS_DATA}"
-  echo "[PREVIEW] FINDINGS_DATA preview: $(echo "$FINDINGS_DATA" | head -c 300)"
+  printf "[PREVIEW] FINDINGS_DATA preview: %s\n" "$(echo "$FINDINGS_DATA" | head -c 300 2>/dev/null || echo "[truncated]")"
 else
   echo "[ERROR] No findings file found or file is empty"
   if [ -f "$TEMP_FINDINGS_FILE" ]; then
@@ -389,6 +389,7 @@ else
   FINDINGS_DATA=""
 fi
 
+# Initialize counters - use the SSE-collected count as starting point
 ISSUE_COUNT=0
 TOTAL_FILES=0
 RESULTS_DETAILS=""
@@ -396,8 +397,13 @@ RESULTS_DETAILS_XML=""
 VULNERABLE_RESULTS=""
 CLEAN_RESULTS=""
 
+echo "[DEBUG] Starting findings processing..."
+echo "[DEBUG] FINDINGS_COUNT from SSE: $FINDINGS_COUNT"
+echo "[DEBUG] TOTAL_FINDINGS_COUNT from SSE: $TOTAL_FINDINGS_COUNT"
+
 # Process each finding (only if we have findings)
 if [ -n "$FINDINGS_DATA" ] && [ "$FINDINGS_COUNT" != "0" ]; then
+  echo "[DEBUG] Processing individual findings data..."
 while IFS= read -r finding; do
   if [ -z "$finding" ]; then
     continue
@@ -488,6 +494,25 @@ while IFS= read -r finding; do
     RESULTS_DETAILS_XML+="<file><findingId>$FINDING_ID</findingId><path>$FILE_PATH</path><function>$FUNCTION_NAME</function><lines>$START_LINE-$END_LINE</lines><status>clean</status><score>$SCORE</score><prediction>$PREDICTION</prediction><analysis><![CDATA[$MESSAGE]]></analysis></file>"
   fi
 done < <(echo "$FINDINGS_DATA")
+else
+  echo "[DEBUG] No individual findings to process or FINDINGS_DATA is empty"
+fi
+
+echo "[DEBUG] After processing: ISSUE_COUNT=$ISSUE_COUNT, TOTAL_FILES=$TOTAL_FILES"
+
+# Fallback to SSE-collected counts if individual processing failed
+if [ "$ISSUE_COUNT" -eq 0 ] && [ "$TOTAL_FILES" -eq 0 ] && [ "$TOTAL_FINDINGS_COUNT" -gt 0 ]; then
+  echo "[FALLBACK] Using SSE-collected counts since individual processing failed"
+  ISSUE_COUNT=$TOTAL_FINDINGS_COUNT
+  # Try to estimate total files from findings data or use a reasonable estimate
+  if [ -n "$FINDINGS_DATA" ]; then
+    # Count unique file paths in findings data
+    TOTAL_FILES=$(echo "$FINDINGS_DATA" | jq -r '.file_path // empty' 2>/dev/null | sort -u | wc -l 2>/dev/null || echo "$TOTAL_FINDINGS_COUNT")
+  else
+    # Use findings count as approximate total (worst case scenario)
+    TOTAL_FILES=$TOTAL_FINDINGS_COUNT
+  fi
+  echo "[FALLBACK] Set ISSUE_COUNT=$ISSUE_COUNT, TOTAL_FILES=$TOTAL_FILES"
 fi
 
 # Generate report based on format
@@ -496,7 +521,11 @@ echo "Generating security report in $REPORT_FORMAT format..."
 PERCENT=0
 if [ $TOTAL_FILES -gt 0 ]; then
   PERCENT=$((ISSUE_COUNT * 100 / TOTAL_FILES))
+else
+  echo "[WARNING] TOTAL_FILES is 0, setting PERCENT to 0"
 fi
+
+echo "[DEBUG] Final counts: ISSUE_COUNT=$ISSUE_COUNT, TOTAL_FILES=$TOTAL_FILES, PERCENT=$PERCENT"
 
 # Combine results with vulnerabilities first, then clean functions
 # Only update RESULTS_DETAILS if we processed findings (otherwise it was set above for clean scans)
@@ -627,13 +656,25 @@ EOF
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   PDF_GENERATOR="$SCRIPT_DIR/generate-pdf.js"
   
+  echo "[DEBUG] PDF_GENERATOR path: $PDF_GENERATOR"
+  echo "[DEBUG] PDF_GENERATOR exists: $([ -f "$PDF_GENERATOR" ] && echo "YES" || echo "NO")"
+  
   if [ -f "$PDF_GENERATOR" ]; then
     echo "Converting report to PDF using Node.js converter..."
+    echo "[DEBUG] Node.js available: $(command -v node >/dev/null 2>&1 && echo "YES" || echo "NO")"
     if command -v node >/dev/null 2>&1; then
       
       # Calculate dynamic timeout based on number of vulnerabilities
       VULNERABILITY_COUNT=$(grep -c "### [🚨✅❌]" security_report.md 2>/dev/null || echo "0")
-      ISSUE_COUNT_MATCH=$(grep -o "Issues found: [0-9]*" security_report.md 2>/dev/null | grep -o "[0-9]*" || echo "0")
+      # Ensure it's a valid number
+      if ! [[ "$VULNERABILITY_COUNT" =~ ^[0-9]+$ ]]; then
+        VULNERABILITY_COUNT=0
+      fi
+      ISSUE_COUNT_MATCH=$(grep -o "Issues found: [0-9]*" security_report.md 2>/dev/null | head -1 | grep -o "[0-9]*" | head -1 || echo "0")
+      # Ensure it's a valid number
+      if ! [[ "$ISSUE_COUNT_MATCH" =~ ^[0-9]+$ ]]; then
+        ISSUE_COUNT_MATCH=0
+      fi
       
       # Use the higher count (vulnerability sections vs summary count)
       if [ "$ISSUE_COUNT_MATCH" -gt "$VULNERABILITY_COUNT" ]; then
@@ -663,21 +704,33 @@ EOF
       
       # Use timeout command to prevent hanging (available on most systems)
       if command -v timeout >/dev/null 2>&1; then
-        if timeout $DYNAMIC_TIMEOUT node "$PDF_GENERATOR" security_report.md security_report.pdf 2>&1; then
+        echo "[DEBUG] Running PDF generation with timeout: timeout $DYNAMIC_TIMEOUT node \"$PDF_GENERATOR\" security_report.md security_report.pdf"
+        if timeout $DYNAMIC_TIMEOUT node "$PDF_GENERATOR" security_report.md security_report.pdf; then
           echo "[SUCCESS] PDF report saved as security_report.pdf"
+          echo "[DEBUG] PDF file size: $(ls -la security_report.pdf 2>/dev/null || echo "File not found")"
         else
           PDF_EXIT_CODE=$?
           echo "[ERROR] PDF generation failed (exit code: $PDF_EXIT_CODE) or timed out after ${DYNAMIC_TIMEOUT} seconds"
+          echo "[DEBUG] Checking for HTML fallback..."
+          if [ -f "security_report.html" ]; then
+            echo "[INFO] HTML report was generated as fallback: security_report.html"
+          fi
           echo "[INFO] Markdown report saved as security_report.md"
           echo "[TIP] PDF generation may fail if Chrome/Chromium is not available or accessible"
         fi
       else
         # Fallback without timeout for systems that don't have it
         echo "[WARNING] No timeout command available, trying PDF generation without timeout protection..."
-        if node "$PDF_GENERATOR" security_report.md security_report.pdf 2>&1; then
+        echo "[DEBUG] Running PDF generation: node \"$PDF_GENERATOR\" security_report.md security_report.pdf"
+        if node "$PDF_GENERATOR" security_report.md security_report.pdf; then
           echo "[SUCCESS] PDF report saved as security_report.pdf"
+          echo "[DEBUG] PDF file size: $(ls -la security_report.pdf 2>/dev/null || echo "File not found")"
         else
           echo "[ERROR] PDF generation failed, keeping markdown report"
+          echo "[DEBUG] Checking for HTML fallback..."
+          if [ -f "security_report.html" ]; then
+            echo "[INFO] HTML report was generated as fallback: security_report.html"
+          fi
           echo "[INFO] Markdown report saved as security_report.md"
           echo "[TIP] If this hangs, PDF generation may be waiting for Chrome/Chromium"
         fi
