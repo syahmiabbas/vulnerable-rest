@@ -93,12 +93,12 @@ Replace `<your-org>/<your-repo>` with your actual GitHub organization and reposi
 - The tool connects to a single SSE endpoint: `/chat?stream=true` for real-time scan progress
 - Sends repository URL in the request body as `{"content": "github_url"}`
 - Processes findings data directly from SSE events with enhanced timeout protection (60 seconds)
-- **PDF generation** uses Node.js with Chrome/Chromium headless for optimal formatting (30-second timeout)
-- **Fallback handling** provides graceful degradation when PDF tools are unavailable
+- **PDF generation** uses lightweight md2pdf package for reliable conversion
+- **Simple setup** with no browser dependencies or complex configuration
 - **Markdown sanitization** automatically fixes code block formatting, line breaks, and content issues
 - **Report formats** include professional styling and detailed vulnerability analysis
 - **XML output** provides structured data for integration with security tools and CI/CD pipelines
-- **Enhanced Error Handling** with detailed logging and timeout protection for all external calls
+- **Enhanced Error Handling** with detailed logging and robust PDF generation
 
 ## Report Features
 
@@ -112,14 +112,13 @@ Replace `<your-org>/<your-repo>` with your actual GitHub organization and reposi
 - Clean, readable formatting for GitHub/GitLab
 
 ### PDF Format (pdf) 
-- Executive summary with risk assessment
-- Layout with styled HTML conversion using Chrome/Chromium headless
-- TailwindCSS styling for modern appearance
-- Color-coded vulnerability cards and risk indicators
-- Responsive design that works well in print
-- Enhanced reliability with 30-second timeout protection
-- Requires Node.js with `generate-pdf.js` for optimal rendering
-- Graceful fallback to HTML output if PDF tools unavailable
+- Executive summary with risk assessment  
+- Clean markdown-to-PDF conversion using md2pdf
+- Professional document layout and formatting
+- Reliable conversion without browser dependencies
+- Lightweight and fast generation
+- Requires Node.js with md2pdf package
+- No complex browser setup or timeout issues
 
 ### XML Format (xml)
 - Structured data format for tool integration
