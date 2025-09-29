@@ -45,35 +45,56 @@ runs:
           exit 1
         fi
         
-        # Install md2pdf for PDF generation
-        echo "Installing md2pdf for reliable PDF generation..."
-        if npm install -g md2pdf; then
+        # Install Go and md2pdf for PDF generation
+        echo "Installing Go and md2pdf for reliable PDF generation..."
+        
+        # Check if Go is already installed
+        if command -v go >/dev/null 2>&1; then
+          echo "✅ Go is already installed: $(go version)"
+        else
+          echo "Installing Go 1.21.3..."
+          # Use a more reliable Go installation method
+          GO_VERSION="1.21.3"
+          GO_ARCHIVE="go${GO_VERSION}.linux-amd64.tar.gz"
+          
+          # Download and install Go
+          curl -fsSL "https://golang.org/dl/${GO_ARCHIVE}" -o "/tmp/${GO_ARCHIVE}"
+          sudo rm -rf /usr/local/go
+          sudo tar -C /usr/local -xzf "/tmp/${GO_ARCHIVE}"
+          rm "/tmp/${GO_ARCHIVE}"
+          
+          # Update PATH
+          export PATH=$PATH:/usr/local/go/bin
+          echo "/usr/local/go/bin" | sudo tee -a /etc/environment
+          
+          # Verify installation
+          if /usr/local/go/bin/go version; then
+            echo "✅ Go installed successfully: $(/usr/local/go/bin/go version)"
+          else
+            echo "❌ Go installation verification failed"
+            exit 1
+          fi
+        fi
+        
+        # Ensure Go is in PATH
+        export PATH=$PATH:/usr/local/go/bin
+        export GOPATH=${GOPATH:-$HOME/go}
+        export PATH=$PATH:$GOPATH/bin
+        
+        # Install md2pdf using go install
+        echo "Installing md2pdf from github.com/solworktech/md2pdf/v2/cmd/md2pdf@latest..."
+        if go install github.com/solworktech/md2pdf/v2/cmd/md2pdf@latest; then
           echo "✅ md2pdf installed successfully"
           
-          # Debug npm configuration
-          echo "[DEBUG] npm global bin directory: $(npm bin -g 2>/dev/null || echo 'not found')"
-          echo "[DEBUG] npm global root directory: $(npm root -g 2>/dev/null || echo 'not found')"
-          echo "[DEBUG] Current PATH: $PATH"
-          
-          # Refresh PATH and verify installation
-          export PATH="$(npm bin -g):$PATH"
-          echo "[DEBUG] Updated PATH: $PATH"
-          
-          # Test different ways to access md2pdf
+          # Verify installation
           if command -v md2pdf >/dev/null 2>&1; then
-            echo "✅ md2pdf found in PATH"
-            md2pdf --version 2>/dev/null || echo "md2pdf command available"
-          elif command -v npx >/dev/null 2>&1; then
-            echo "✅ md2pdf accessible via npx"
-            npx md2pdf --version 2>/dev/null || echo "md2pdf available via npx"
+            echo "✅ md2pdf command available in PATH"
+          elif [ -f "$GOPATH/bin/md2pdf" ]; then
+            echo "✅ md2pdf installed at $GOPATH/bin/md2pdf"
+          elif [ -f "$HOME/go/bin/md2pdf" ]; then
+            echo "✅ md2pdf installed at $HOME/go/bin/md2pdf"
           else
-            echo "⚠️ md2pdf command not directly accessible, will use alternative methods"
-            
-            # Additional debug info
-            echo "[DEBUG] Checking for md2pdf in common locations:"
-            ls -la "$(npm bin -g)" 2>/dev/null | grep md2pdf || echo "  - Not found in npm bin -g"
-            ls -la "$(npm root -g)/md2pdf/bin/" 2>/dev/null || echo "  - Not found in npm root -g/md2pdf/bin/"
-            ls -la "/usr/local/bin/" 2>/dev/null | grep md2pdf || echo "  - Not found in /usr/local/bin"
+            echo "⚠️ md2pdf installed but location not confirmed"
           fi
         else
           echo "❌ Failed to install md2pdf"

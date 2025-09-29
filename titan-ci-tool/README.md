@@ -93,8 +93,8 @@ Replace `<your-org>/<your-repo>` with your actual GitHub organization and reposi
 - The tool connects to a single SSE endpoint: `/chat?stream=true` for real-time scan progress
 - Sends repository URL in the request body as `{"content": "github_url"}`
 - Processes findings data directly from SSE events with enhanced timeout protection (60 seconds)
-- **PDF generation** uses lightweight md2pdf package for reliable conversion
-- **Simple setup** with no browser dependencies or complex configuration
+- **PDF generation** uses Go-based md2pdf for fast and reliable conversion
+- **Simple executable** single binary with no complex dependencies or setup
 - **Markdown sanitization** automatically fixes code block formatting, line breaks, and content issues
 - **Report formats** include professional styling and detailed vulnerability analysis
 - **XML output** provides structured data for integration with security tools and CI/CD pipelines
@@ -113,12 +113,12 @@ Replace `<your-org>/<your-repo>` with your actual GitHub organization and reposi
 
 ### PDF Format (pdf) 
 - Executive summary with risk assessment  
-- Clean markdown-to-PDF conversion using md2pdf
+- Clean markdown-to-PDF conversion using Go-based md2pdf
 - Professional document layout and formatting
-- Reliable conversion without browser dependencies
-- Lightweight and fast generation
-- Requires Node.js with md2pdf package
-- No complex browser setup or timeout issues
+- Fast and reliable conversion with solworktech/md2pdf
+- Single binary executable with no complex dependencies
+- Requires Go runtime for installation
+- Simple and efficient conversion process
 
 ### XML Format (xml)
 - Structured data format for tool integration

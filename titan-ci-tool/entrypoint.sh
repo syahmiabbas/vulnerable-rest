@@ -674,40 +674,40 @@ EOF
     echo "Markdown sanitizer not available (Node.js not found), keeping original formatting"
   fi
 
-  # Convert markdown to PDF using md2pdf
+  # Convert markdown to PDF using Go md2pdf
   echo "Converting report to PDF using md2pdf..."
   
-  # Try different ways to find md2pdf command
+  # Try to find md2pdf command in multiple locations
   MD2PDF_CMD=""
   if command -v md2pdf >/dev/null 2>&1; then
     MD2PDF_CMD="md2pdf"
     echo "[DEBUG] Found md2pdf in PATH"
-  elif command -v npx >/dev/null 2>&1; then
-    MD2PDF_CMD="npx md2pdf"
-    echo "[DEBUG] Using npx to run md2pdf"
-  elif [ -f "/usr/local/bin/md2pdf" ]; then
-    MD2PDF_CMD="/usr/local/bin/md2pdf"
-    echo "[DEBUG] Found md2pdf at /usr/local/bin/md2pdf"
-  elif [ -f "$(npm root -g)/md2pdf/bin/md2pdf" ]; then
-    MD2PDF_CMD="$(npm root -g)/md2pdf/bin/md2pdf"
-    echo "[DEBUG] Found md2pdf in global npm modules"
+  elif [ -f "$HOME/go/bin/md2pdf" ]; then
+    MD2PDF_CMD="$HOME/go/bin/md2pdf"
+    echo "[DEBUG] Found md2pdf in $HOME/go/bin/md2pdf"
+  elif command -v go >/dev/null 2>&1 && [ -f "$(go env GOPATH)/bin/md2pdf" ]; then
+    MD2PDF_CMD="$(go env GOPATH)/bin/md2pdf"
+    echo "[DEBUG] Found md2pdf in GOPATH/bin: $(go env GOPATH)/bin/md2pdf"
+  elif [ -f "/usr/local/go/bin/md2pdf" ]; then
+    MD2PDF_CMD="/usr/local/go/bin/md2pdf"
+    echo "[DEBUG] Found md2pdf in /usr/local/go/bin/md2pdf"
   else
-    echo "[DEBUG] Checking npm global bin directory..."
-    NPM_BIN=$(npm bin -g 2>/dev/null)
-    if [ -n "$NPM_BIN" ] && [ -f "$NPM_BIN/md2pdf" ]; then
-      MD2PDF_CMD="$NPM_BIN/md2pdf"
-      echo "[DEBUG] Found md2pdf in npm global bin: $NPM_BIN"
+    echo "[ERROR] md2pdf not found in any expected location"
+    echo "[DEBUG] Checked locations:"
+    echo "  - PATH: $(command -v md2pdf 2>/dev/null || echo 'not found')"
+    echo "  - $HOME/go/bin/md2pdf: $([ -f "$HOME/go/bin/md2pdf" ] && echo 'found' || echo 'not found')"
+    if command -v go >/dev/null 2>&1; then
+      echo "  - $(go env GOPATH)/bin/md2pdf: $([ -f "$(go env GOPATH)/bin/md2pdf" ] && echo 'found' || echo 'not found')"
     fi
+    echo "[INFO] Falling back to markdown report: security_report.md"
+    echo "[TIP] Ensure md2pdf is installed: go install github.com/solworktech/md2pdf/v2/cmd/md2pdf@latest"
   fi
   
-  echo "[DEBUG] md2pdf command: $MD2PDF_CMD"
-  
   if [ -n "$MD2PDF_CMD" ]; then
-    echo "Converting markdown to PDF with md2pdf..."
+    echo "[INFO] Converting security_report.md to security_report.pdf using: $MD2PDF_CMD"
     
-    # Simple PDF generation with md2pdf
-    echo "[INFO] Converting security_report.md to security_report.pdf..."
-    if $MD2PDF_CMD security_report.md -o security_report.pdf; then
+    # Use md2pdf with the markdown file as input and specify output
+    if $MD2PDF_CMD -i security_report.md -o security_report.pdf; then
       echo "[SUCCESS] ✅ PDF report generated successfully: security_report.pdf"
       if [ -f "security_report.pdf" ]; then
         PDF_SIZE=$(ls -lh security_report.pdf | awk '{print $5}')
@@ -716,43 +716,7 @@ EOF
     else
       echo "[ERROR] ❌ PDF generation failed with md2pdf"
       echo "[INFO] Markdown report is still available: security_report.md"
-      echo "[TIP] Check if md2pdf is properly installed"
-    fi
-  else
-    echo "[ERROR] md2pdf not found in any expected location."
-    echo "[DEBUG] Trying direct node execution as fallback..."
-    
-    # Try to run md2pdf directly with node
-    if command -v node >/dev/null 2>&1 && npm list -g md2pdf >/dev/null 2>&1; then
-      echo "[DEBUG] Found md2pdf in global packages, trying node execution..."
-      if node -e "
-        const md2pdf = require('md2pdf');
-        const fs = require('fs');
-        const path = require('path');
-        
-        const markdown = fs.readFileSync('security_report.md', 'utf8');
-        md2pdf({ markdown }).then(pdf => {
-          fs.writeFileSync('security_report.pdf', pdf);
-          console.log('[SUCCESS] ✅ PDF generated with direct node execution');
-        }).catch(err => {
-          console.error('[ERROR] ❌ PDF generation failed:', err.message);
-          process.exit(1);
-        });
-      "; then
-        echo "[SUCCESS] ✅ PDF report generated successfully: security_report.pdf"
-        if [ -f "security_report.pdf" ]; then
-          PDF_SIZE=$(ls -lh security_report.pdf | awk '{print $5}')
-          echo "[INFO] PDF file size: $PDF_SIZE"
-        fi
-      else
-        echo "[ERROR] Direct node execution also failed"
-        echo "[INFO] Markdown report saved as security_report.md"
-        echo "[TIP] Try: npm install -g md2pdf"
-      fi
-    else
-      echo "[ERROR] md2pdf not available. Saving as markdown only."
-      echo "[INFO] Markdown report saved as security_report.md"
-      echo "[TIP] To generate PDF: install md2pdf with 'npm install -g md2pdf'"
+      echo "[TIP] Check md2pdf installation and file permissions"
     fi
   fi
 
