@@ -29,23 +29,41 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - name: Setup lightweight PDF generation tools
+    - name: Setup PDF generation tools
       if: ${{ inputs.report_format == 'pdf' }}
       shell: bash
       run: |
-        echo "Setting up lightweight PDF generation..."
+        echo "Setting up PDF generation tools..."
         
         # Check if Node.js is available (preferred method)
         if command -v node >/dev/null 2>&1; then
-          echo "Node.js is available for PDF generation"
+          echo "✅ Node.js is available for PDF generation"
           node_version=$(node --version)
           echo "Node.js version: $node_version"
         else
-          echo "Checking if Chrome/Chromium is available..."
-          if command -v google-chrome >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
-            echo "Chrome/Chromium found, will use for PDF generation"
+          echo "❌ Node.js not found"
+        fi
+        
+        # Install Chrome for PDF generation
+        echo "Installing Chrome for headless PDF generation..."
+        sudo apt-get update -qq
+        sudo apt-get install -y wget gnupg
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+        sudo apt-get update -qq
+        sudo apt-get install -y google-chrome-stable
+        
+        # Verify Chrome installation
+        if command -v google-chrome >/dev/null 2>&1; then
+          echo "✅ Chrome installed successfully"
+          google-chrome --version
+        else
+          echo "⚠️ Chrome installation may have failed, checking alternatives..."
+          if command -v chromium-browser >/dev/null 2>&1; then
+            echo "✅ Chromium browser available as fallback"
+            chromium-browser --version
           else
-            echo "No PDF generation tools available, will output styled HTML instead"
+            echo "❌ No suitable browser found for PDF generation"
           fi
         fi
       

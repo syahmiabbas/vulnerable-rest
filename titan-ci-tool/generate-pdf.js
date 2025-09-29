@@ -411,9 +411,13 @@ let pdfGenerated = false;
 // Method 1: Try Chrome/Chromium headless (good quality, but requires Chrome)
 if (!pdfGenerated) {
   const chromeCommands = [
+    'google-chrome-stable',  // Added stable version first (commonly installed via apt)
     'google-chrome',
     'chromium-browser', 
     'chromium',
+    '/usr/bin/google-chrome-stable',  // Common Ubuntu/Debian path
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
@@ -423,7 +427,16 @@ if (!pdfGenerated) {
     try {
       console.log(`🔍 Trying Chrome command: ${chromeCmd}`);
       
-      // Add timeout and better options for Chrome
+      // First test if Chrome command exists and can show version
+      try {
+        execSync(`"${chromeCmd}" --version`, { stdio: 'pipe', timeout: 5000 });
+        console.log(`✅ Chrome command "${chromeCmd}" is responsive`);
+      } catch (versionError) {
+        console.log(`❌ Chrome command "${chromeCmd}" failed version check: ${versionError.message}`);
+        continue; // Skip to next Chrome command
+      }
+      
+      // Enhanced Chrome options for CI environments
       const chromeOptions = [
         '--headless',
         '--disable-gpu',
@@ -433,8 +446,15 @@ if (!pdfGenerated) {
         '--disable-plugins',
         '--disable-images',
         '--disable-javascript',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
         '--run-all-compositor-stages-before-draw',
-        '--virtual-time-budget=1000',
+        '--virtual-time-budget=5000',
+        '--force-device-scale-factor=1',
+        '--hide-scrollbars',
         `--print-to-pdf="${outputPdfFile}"`,
         '--print-to-pdf-no-header',
         `"${tempHtmlFile}"`
