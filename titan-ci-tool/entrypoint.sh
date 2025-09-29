@@ -118,14 +118,17 @@ touch "$TEMP_RAW_SSE.processing"
 show_activity &
 ACTIVITY_PID=$!
 
-# Start curl with real-time output processing
+# Start curl with real-time output processing - use temp files to avoid subshell variable loss
 echo "[SSE] Initiating connection..."
-(
-  curl --max-time "$TIMEOUT_SECONDS" -X POST "$SSE_ENDPOINT" \
-    -H "Content-Type: application/json" \
-    -H "Accept: text/event-stream" \
-    --data "{\"content\": \"$REPO_URL\"}" \
-    -N --no-buffer 2>/dev/null | while IFS= read -r line; do
+# Initialize count tracking files
+echo "0" > "/tmp/total_findings_count_$$"
+echo "0" > "/tmp/findings_count_$$"
+
+curl --max-time "$TIMEOUT_SECONDS" -X POST "$SSE_ENDPOINT" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  --data "{\"content\": \"$REPO_URL\"}" \
+  -N --no-buffer 2>/dev/null | while IFS= read -r line; do
     
     # Mark activity
     touch "$TEMP_RAW_SSE.activity"
@@ -166,11 +169,15 @@ echo "[SSE] Initiating connection..."
           
           if [ -n "$EVENT_FINDINGS" ] && [ "$EVENT_FINDINGS" != "" ]; then
             echo "[SUCCESS] 📊 Found $EVENT_FINDINGS_COUNT findings in this event"
-            TOTAL_FINDINGS_COUNT=$((TOTAL_FINDINGS_COUNT + EVENT_FINDINGS_COUNT))
+            
+            # Update count tracking files
+            CURRENT_TOTAL=$(cat "/tmp/total_findings_count_$$" 2>/dev/null || echo "0")
+            NEW_TOTAL=$((CURRENT_TOTAL + EVENT_FINDINGS_COUNT))
+            echo "$NEW_TOTAL" > "/tmp/total_findings_count_$$"
             
             # Append findings to temp file (one per line)
             echo "$EVENT_FINDINGS" >> "$TEMP_FINDINGS_FILE"
-            echo "[TOTAL] 📈 Total findings collected so far: $TOTAL_FINDINGS_COUNT"
+            echo "[TOTAL] 📈 Total findings collected so far: $NEW_TOTAL"
           else
             echo "[WARNING] No valid findings data in this event"
           fi
@@ -178,11 +185,15 @@ echo "[SSE] Initiating connection..."
           echo "[FALLBACK] Using sed parsing for findings (jq not available)"
           EVENT_FINDINGS_COUNT=$(echo "$event_data" | sed -n 's/.*"count":\s*\([0-9]*\).*/\1/p')
           if [ -n "$EVENT_FINDINGS_COUNT" ] && [ "$EVENT_FINDINGS_COUNT" != "0" ]; then
-            TOTAL_FINDINGS_COUNT=$((TOTAL_FINDINGS_COUNT + EVENT_FINDINGS_COUNT))
+            # Update count tracking files
+            CURRENT_TOTAL=$(cat "/tmp/total_findings_count_$$" 2>/dev/null || echo "0")
+            NEW_TOTAL=$((CURRENT_TOTAL + EVENT_FINDINGS_COUNT))
+            echo "$NEW_TOTAL" > "/tmp/total_findings_count_$$"
+            
             echo "[SUCCESS] 📊 Found $EVENT_FINDINGS_COUNT findings (sed parsing)"
             # For sed fallback, save the whole findings section
             echo "$event_data" >> "$TEMP_FINDINGS_FILE"
-            echo "[TOTAL] 📈 Total findings collected so far: $TOTAL_FINDINGS_COUNT"
+            echo "[TOTAL] 📈 Total findings collected so far: $NEW_TOTAL"
           fi
         fi
       fi
@@ -200,15 +211,23 @@ echo "[SSE] Initiating connection..."
   
   # Mark completion
   touch "$TEMP_RAW_SSE.completed"
-) &
+done &
 CURL_PID=$!
 
 # Wait for curl to complete
 wait $CURL_PID
 CURL_EXIT_CODE=$?
 
-# Clean up background processes
-rm -f "$TEMP_RAW_SSE.processing"
+# Read back the counts from temp files
+TOTAL_FINDINGS_COUNT=$(cat "/tmp/total_findings_count_$$" 2>/dev/null || echo "0")
+FINDINGS_COUNT=$TOTAL_FINDINGS_COUNT
+
+echo "[SSE] Final count collection from temp files:"
+echo "[SSE] TOTAL_FINDINGS_COUNT: $TOTAL_FINDINGS_COUNT"
+echo "[SSE] FINDINGS_COUNT: $FINDINGS_COUNT"
+
+# Clean up background processes and temp files
+rm -f "$TEMP_RAW_SSE.processing" "/tmp/total_findings_count_$$" "/tmp/findings_count_$$"
 if [ -n "$ACTIVITY_PID" ]; then
   kill $ACTIVITY_PID 2>/dev/null || true
 fi
@@ -217,7 +236,7 @@ fi
 if [ $CURL_EXIT_CODE -ne 0 ]; then
   echo "[ERROR] SSE connection failed with exit code $CURL_EXIT_CODE"
   echo "This could indicate network issues, invalid URL, or API service unavailable"
-  rm -f "$TEMP_SSE_FILE" "$TEMP_FINDINGS_FILE" "$TEMP_RAW_SSE" "$TEMP_RAW_SSE.processing" "$TEMP_RAW_SSE.activity" "$TEMP_RAW_SSE.completed"
+  rm -f "$TEMP_SSE_FILE" "$TEMP_FINDINGS_FILE" "$TEMP_RAW_SSE" "$TEMP_RAW_SSE.processing" "$TEMP_RAW_SSE.activity" "$TEMP_RAW_SSE.completed" "/tmp/total_findings_count_$$" "/tmp/findings_count_$$"
   exit 1
 fi
 
@@ -376,7 +395,11 @@ if [ -f "$TEMP_FINDINGS_FILE" ] && [ -s "$TEMP_FINDINGS_FILE" ]; then
   FINDINGS_DATA=$(cat "$TEMP_FINDINGS_FILE")
   rm -f "$TEMP_FINDINGS_FILE"
   echo "[DATA] FINDINGS_DATA length: ${#FINDINGS_DATA}"
-  printf "[PREVIEW] FINDINGS_DATA preview: %s\n" "$(echo "$FINDINGS_DATA" | head -c 300 2>/dev/null || echo "[truncated]")"
+  # Avoid broken pipe by writing preview to a temp file first
+  echo "$FINDINGS_DATA" | head -c 300 > /tmp/preview_$$ 2>/dev/null || echo "[truncated]" > /tmp/preview_$$
+  PREVIEW_CONTENT=$(cat /tmp/preview_$$ 2>/dev/null || echo "[error reading preview]")
+  echo "[PREVIEW] FINDINGS_DATA preview: $PREVIEW_CONTENT"
+  rm -f /tmp/preview_$$
 else
   echo "[ERROR] No findings file found or file is empty"
   if [ -f "$TEMP_FINDINGS_FILE" ]; then
