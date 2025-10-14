@@ -51,7 +51,7 @@ jobs:
       uses: titanfyp/titan-ci-tool@v1.0.0
       with:
         api_base_url: ${{ secrets.TITAN_API_BASE_URL }}
-        github_token: ${{ secrets.GH_TOKEN }}
+        github_token: ${{ secrets.GITHUB_TOKEN }}
         report_format: 'pdf'
         timeout_seconds: 300
         blocking: true
