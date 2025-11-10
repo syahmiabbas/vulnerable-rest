@@ -52,10 +52,10 @@ jobs:
       with:
         api_base_url: ${{ secrets.TITAN_API_BASE_URL }}
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        report_format: 'pdf'
+        report_format: 'xml'
         timeout_seconds: 300
         blocking: true
-        block_percentage: 10
+        block_percentage: 70
 
     - name: Security scan summary
       if: failure()
