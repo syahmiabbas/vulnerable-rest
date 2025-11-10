@@ -51,9 +51,9 @@ jobs:
       uses: titanfyp/titan-ci-tool@v1.0.0
       with:
         api_base_url: ${{ secrets.TITAN_API_BASE_URL }}
-        github_token: "invalid-token-string"
+        github_token: ${{ secrets.GITHUB_TOKEN }}
         report_format: 'xml'
-        timeout_seconds: 300
+        timeout_seconds: 2
         blocking: true
         block_percentage: 70
 
